@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --production
+RUN npm install --omit=dev
 
 # Copy source
 COPY src/ ./src/
@@ -14,6 +14,7 @@ COPY scripts/ ./scripts/
 
 # Expose port (7777 - verified free on OnlyFlies server)
 EXPOSE 7777
+ENV PORT=7777
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

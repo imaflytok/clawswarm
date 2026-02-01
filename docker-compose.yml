@@ -7,62 +7,20 @@ services:
     restart: unless-stopped
     ports:
       - "7777:7777"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=7777
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://moltswarm-redis:6379
-      - JWT_SECRET=${JWT_SECRET}
-      - HEDERA_NETWORK=${HEDERA_NETWORK:-mainnet}
-      - HEDERA_OPERATOR_ID=${HEDERA_OPERATOR_ID}
-      - HEDERA_OPERATOR_KEY=${HEDERA_OPERATOR_KEY}
-    depends_on:
-      - moltswarm-redis
+      - REDIS_URL=redis://fly-redis:6379
     networks:
-      - moltswarm
+      - docker_fly-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:7777/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  moltswarm-worker:
-    build: .
-    container_name: moltswarm-worker
-    restart: unless-stopped
-    command: ["node", "src/worker.js"]
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://moltswarm-redis:6379
-      - HEDERA_NETWORK=${HEDERA_NETWORK:-mainnet}
-      - HEDERA_OPERATOR_ID=${HEDERA_OPERATOR_ID}
-      - HEDERA_OPERATOR_KEY=${HEDERA_OPERATOR_KEY}
-    depends_on:
-      - moltswarm-redis
-    networks:
-      - moltswarm
-
-  moltswarm-redis:
-    image: redis:7-alpine
-    container_name: moltswarm-redis
-    restart: unless-stopped
-    ports:
-      - "7779:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    networks:
-      - moltswarm
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
 networks:
-  moltswarm:
-    driver: bridge
-
-volumes:
-  redis-data:
+  docker_fly-network:
+    external: true

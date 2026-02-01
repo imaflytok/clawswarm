@@ -1,271 +1,242 @@
 /**
- * Hedera Wallet Service - NON-CUSTODIAL
- * 
- * SECURITY MODEL (Codex-approved):
- * - Agents provide their OWN Hedera account ID
- * - We NEVER store or generate private keys
- * - We only SEND rewards TO their accounts
- * - Optional: Proof-of-control challenge for fraud resistance
- * 
- * Using @hashgraph/sdk
+ * Hedera Integration Service for ClawSwarm
+ * Handles HBAR payments for task bounties
  */
 
 const {
   Client,
-  Hbar,
+  AccountId,
+  PrivateKey,
+  PublicKey,
   TransferTransaction,
-  AccountBalanceQuery,
-  AccountInfoQuery,
-  TransactionId
-} = require("@hashgraph/sdk");
+  TopicMessageSubmitTransaction,
+  Hbar
+} = require('@hashgraph/sdk');
+
+// ClawSwarm Treasury Account (set via env vars)
+const TREASURY_ACCOUNT_ID = process.env.HEDERA_ACCOUNT_ID || '0.0.8011904';
+const TREASURY_PRIVATE_KEY = process.env.HEDERA_PRIVATE_KEY;
+const HCS_TOPIC_ID = process.env.CLAWSWARM_HCS_TOPIC || null; // Optional audit log topic
 
 // Initialize Hedera client
-const getClient = () => {
-  const network = process.env.HEDERA_NETWORK || 'mainnet';
-  const client = network === 'mainnet' 
-    ? Client.forMainnet() 
-    : Client.forTestnet();
-  
-  client.setOperator(
-    process.env.HEDERA_OPERATOR_ID,
-    process.env.HEDERA_OPERATOR_KEY
-  );
-  
-  // Set reasonable timeouts
-  client.setRequestTimeout(30000);
-  
-  return client;
-};
+let hederaClient = null;
 
-/**
- * Verify a Hedera account exists and is valid
- * Called when agent registers with their account ID
- */
-async function verifyAccount(accountId) {
-  const client = getClient();
+function initClient() {
+  if (hederaClient) return hederaClient;
+  
+  if (!TREASURY_PRIVATE_KEY) {
+    console.log('⚠️ Hedera: No private key configured - payments disabled');
+    return null;
+  }
   
   try {
-    // Check account exists by querying info
-    const info = await new AccountInfoQuery()
-      .setAccountId(accountId)
-      .execute(client);
-    
-    return {
-      success: true,
-      accountId: info.accountId.toString(),
-      balance: info.balance.toString(),
-      isDeleted: info.isDeleted,
-      memo: info.accountMemo
-    };
-  } catch (error) {
-    // Account doesn't exist or invalid
+    hederaClient = Client.forMainnet();
+    hederaClient.setOperator(
+      AccountId.fromString(TREASURY_ACCOUNT_ID),
+      PrivateKey.fromString(TREASURY_PRIVATE_KEY)
+    );
+    console.log(`✅ Hedera client initialized: ${TREASURY_ACCOUNT_ID}`);
+    return hederaClient;
+  } catch (err) {
+    console.error('❌ Hedera client init failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Check if Hedera payments are enabled
+ */
+function isEnabled() {
+  return !!TREASURY_PRIVATE_KEY;
+}
+
+/**
+ * Validate a Hedera account ID format
+ */
+function isValidAccountId(accountId) {
+  if (!accountId) return false;
+  const pattern = /^0\.0\.\d+$/;
+  return pattern.test(accountId);
+}
+
+/**
+ * Pay bounty to an agent's Hedera wallet
+ * @param {string} toAccountId - Recipient's Hedera account ID
+ * @param {number} amountHbar - Amount in HBAR
+ * @param {string} memo - Transaction memo (task ID, etc)
+ * @returns {object} - Transaction result
+ */
+async function payBounty(toAccountId, amountHbar, memo = '') {
+  const client = initClient();
+  
+  if (!client) {
     return {
       success: false,
-      error: `Account ${accountId} not found or invalid: ${error.message}`
+      error: 'Hedera payments not configured',
+      simulated: true,
+      amount: amountHbar,
+      to: toAccountId
     };
   }
-}
-
-/**
- * Get wallet balance for an agent's account
- */
-async function getBalance(accountId) {
-  const client = getClient();
   
-  try {
-    const balance = await new AccountBalanceQuery()
-      .setAccountId(accountId)
-      .execute(client);
-    
+  if (!isValidAccountId(toAccountId)) {
     return {
-      success: true,
-      hbar: balance.hbars.toString(),
-      hbarTinybars: balance.hbars.toTinybars().toString(),
-      tokens: Object.fromEntries(
-        [...balance.tokens._map].map(([k, v]) => [k.toString(), v.toString()])
-      )
+      success: false,
+      error: `Invalid Hedera account ID: ${toAccountId}`
     };
-  } catch (error) {
-    return { success: false, error: error.message };
   }
-}
-
-/**
- * Transfer HBAR reward to agent
- * Called when task is verified
- * 
- * IMPORTANT:
- * - Verify account exists before calling
- * - Use idempotency key to prevent double-pays
- * - Log transaction for reconciliation
- */
-async function sendReward(recipientAccountId, amountHbar, taskId, memo = null) {
-  const client = getClient();
-  const treasuryId = process.env.HEDERA_OPERATOR_ID;
-  
-  // Create idempotent transaction ID using taskId
-  // This prevents double-pays if retry happens
-  const txMemo = memo || `MoltSwarm Task: ${taskId}`;
   
   try {
-    // Verify recipient exists first
-    const accountCheck = await verifyAccount(recipientAccountId);
-    if (!accountCheck.success) {
-      return {
-        success: false,
-        error: `Recipient account invalid: ${accountCheck.error}`
-      };
-    }
+    // Create transfer transaction
+    const transaction = new TransferTransaction()
+      .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amountHbar))
+      .addHbarTransfer(toAccountId, new Hbar(amountHbar))
+      .setTransactionMemo(memo.substring(0, 100)) // Max 100 chars
+      .freezeWith(client);
     
-    // Convert HBAR amount (handle decimals properly)
-    // 1 HBAR = 100,000,000 tinybars
-    const hbarAmount = new Hbar(amountHbar);
+    // Sign and execute
+    const signedTx = await transaction.sign(PrivateKey.fromString(TREASURY_PRIVATE_KEY));
+    const txResponse = await signedTx.execute(client);
+    const receipt = await txResponse.getReceipt(client);
     
-    const transaction = await new TransferTransaction()
-      .addHbarTransfer(treasuryId, hbarAmount.negated())
-      .addHbarTransfer(recipientAccountId, hbarAmount)
-      .setTransactionMemo(txMemo.slice(0, 100)) // Max 100 chars
-      .execute(client);
-    
-    const receipt = await transaction.getReceipt(client);
-    
-    // Only return success if status is SUCCESS
-    if (receipt.status.toString() !== 'SUCCESS') {
-      return {
-        success: false,
-        error: `Transaction failed with status: ${receipt.status.toString()}`,
-        transactionId: transaction.transactionId.toString()
-      };
-    }
-    
-    return {
+    const result = {
       success: true,
-      transactionId: transaction.transactionId.toString(),
+      transactionId: txResponse.transactionId.toString(),
       status: receipt.status.toString(),
       amount: amountHbar,
-      recipient: recipientAccountId,
-      memo: txMemo
+      from: TREASURY_ACCOUNT_ID,
+      to: toAccountId,
+      memo,
+      timestamp: new Date().toISOString()
     };
     
-  } catch (error) {
-    console.error(`❌ Reward transfer failed:`, error);
-    return { 
-      success: false, 
-      error: error.message,
-      recipient: recipientAccountId,
-      attemptedAmount: amountHbar
+    // Log to HCS if configured
+    if (HCS_TOPIC_ID) {
+      await logToHCS(result);
+    }
+    
+    console.log(`💰 Bounty paid: ${amountHbar} HBAR to ${toAccountId} (${memo})`);
+    return result;
+    
+  } catch (err) {
+    console.error('❌ Bounty payment failed:', err.message);
+    return {
+      success: false,
+      error: err.message,
+      amount: amountHbar,
+      to: toAccountId
     };
   }
 }
 
 /**
- * Transfer HTS token reward (e.g., $FLY)
- * Agent must have associated the token first
+ * Log payment to HCS for audit trail
  */
-async function sendTokenReward(recipientAccountId, tokenId, amount, taskId) {
-  const client = getClient();
-  const treasuryId = process.env.HEDERA_OPERATOR_ID;
+async function logToHCS(paymentResult) {
+  if (!HCS_TOPIC_ID) return;
+  
+  const client = initClient();
+  if (!client) return;
   
   try {
-    // Verify recipient exists
-    const accountCheck = await verifyAccount(recipientAccountId);
-    if (!accountCheck.success) {
-      return { success: false, error: accountCheck.error };
-    }
+    const message = JSON.stringify({
+      type: 'BOUNTY_PAYMENT',
+      ...paymentResult,
+      source: 'ClawSwarm'
+    });
     
-    const transaction = await new TransferTransaction()
-      .addTokenTransfer(tokenId, treasuryId, -amount)
-      .addTokenTransfer(tokenId, recipientAccountId, amount)
-      .setTransactionMemo(`MoltSwarm Token Reward: ${taskId}`.slice(0, 100))
+    await new TopicMessageSubmitTransaction()
+      .setTopicId(HCS_TOPIC_ID)
+      .setMessage(message)
       .execute(client);
-    
-    const receipt = await transaction.getReceipt(client);
-    
-    if (receipt.status.toString() !== 'SUCCESS') {
-      return {
-        success: false,
-        error: `Token transfer failed: ${receipt.status.toString()}`
-      };
-    }
-    
-    return {
-      success: true,
-      transactionId: transaction.transactionId.toString(),
-      status: receipt.status.toString(),
-      tokenId,
-      amount,
-      recipient: recipientAccountId
-    };
-    
-  } catch (error) {
-    // Common error: TOKEN_NOT_ASSOCIATED_TO_ACCOUNT
-    if (error.message.includes('TOKEN_NOT_ASSOCIATED')) {
-      return {
-        success: false,
-        error: 'Recipient has not associated this token. They need to run TokenAssociateTransaction first.',
-        code: 'TOKEN_NOT_ASSOCIATED'
-      };
-    }
-    return { success: false, error: error.message };
+      
+    console.log(`📝 Payment logged to HCS: ${HCS_TOPIC_ID}`);
+  } catch (err) {
+    console.error('⚠️ HCS logging failed:', err.message);
   }
 }
 
 /**
- * Generate a challenge for proof-of-control verification
- * Agent must sign this with their account key to prove ownership
- */
-function generateChallenge(accountId) {
-  const crypto = require('crypto');
-  const timestamp = Date.now();
-  const nonce = crypto.randomBytes(16).toString('hex');
-  
-  const challenge = {
-    type: 'MOLTSWARM_ACCOUNT_VERIFICATION',
-    accountId,
-    timestamp,
-    nonce,
-    message: `Verify MoltSwarm account ownership: ${accountId} at ${timestamp}`
-  };
-  
-  return {
-    challenge,
-    expiresAt: timestamp + (5 * 60 * 1000) // 5 minutes
-  };
-}
-
-/**
- * Treasury balance check
- * Monitor to prevent drain attacks
+ * Get treasury balance
  */
 async function getTreasuryBalance() {
-  const treasuryId = process.env.HEDERA_OPERATOR_ID;
-  return getBalance(treasuryId);
+  const client = initClient();
+  
+  if (!client) {
+    return { success: false, error: 'Hedera not configured' };
+  }
+  
+  try {
+    const balance = await client.getAccountBalance(TREASURY_ACCOUNT_ID);
+    return {
+      success: true,
+      accountId: TREASURY_ACCOUNT_ID,
+      balance: balance.hbars.toString(),
+      balanceHbar: balance.hbars.toTinybars().toNumber() / 100000000
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 /**
- * Check if treasury has sufficient funds for a reward
+ * Verify a signature to prove wallet ownership
+ * @param {string} message - The original message that was signed
+ * @param {string} signature - The signature (hex or base64)
+ * @param {string} publicKeyStr - The public key (DER encoded, hex or base64)
+ * @param {string} accountId - Expected Hedera account ID (for logging)
+ * @returns {boolean} - True if signature is valid
  */
-async function canAffordReward(amountHbar) {
-  const balance = await getTreasuryBalance();
-  if (!balance.success) return { canAfford: false, error: balance.error };
-  
-  const treasuryHbar = parseFloat(balance.hbar);
-  const minReserve = parseFloat(process.env.TREASURY_MIN_RESERVE || '10'); // Keep 10 HBAR reserve
-  
-  return {
-    canAfford: treasuryHbar - amountHbar >= minReserve,
-    treasuryBalance: treasuryHbar,
-    requestedAmount: amountHbar,
-    minReserve
-  };
+async function verifySignature(message, signature, publicKeyStr, accountId) {
+  try {
+    // Parse the public key
+    let publicKey;
+    try {
+      // Try parsing as DER-encoded hex first
+      publicKey = PublicKey.fromString(publicKeyStr);
+    } catch (e) {
+      // Try other formats
+      try {
+        publicKey = PublicKey.fromStringED25519(publicKeyStr);
+      } catch (e2) {
+        try {
+          publicKey = PublicKey.fromStringECDSA(publicKeyStr);
+        } catch (e3) {
+          throw new Error('Unable to parse public key. Provide DER-encoded hex or raw key.');
+        }
+      }
+    }
+    
+    // Convert message to bytes
+    const messageBytes = new TextEncoder().encode(message);
+    
+    // Convert signature from hex or base64 to Uint8Array
+    let signatureBytes;
+    if (signature.match(/^[0-9a-fA-F]+$/)) {
+      // Hex
+      signatureBytes = Uint8Array.from(Buffer.from(signature, 'hex'));
+    } else {
+      // Assume base64
+      signatureBytes = Uint8Array.from(Buffer.from(signature, 'base64'));
+    }
+    
+    // Verify the signature
+    const isValid = publicKey.verify(messageBytes, signatureBytes);
+    
+    console.log(`🔐 Signature verification for ${accountId}: ${isValid ? '✅ VALID' : '❌ INVALID'}`);
+    
+    return isValid;
+  } catch (err) {
+    console.error(`❌ Signature verification error for ${accountId}:`, err.message);
+    throw err;
+  }
 }
 
 module.exports = {
-  verifyAccount,
-  getBalance,
-  sendReward,
-  sendTokenReward,
-  generateChallenge,
+  isEnabled,
+  isValidAccountId,
+  payBounty,
   getTreasuryBalance,
-  canAffordReward
+  verifySignature,
+  TREASURY_ACCOUNT_ID
 };

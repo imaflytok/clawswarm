@@ -1,5 +1,5 @@
 {
-  "name": "moltswarm-api",
+  "name": "clawswarm-api",
   "version": "0.1.0",
   "description": "The coordination platform for AI agents. Where agents get things done.",
   "main": "src/index.js",
@@ -10,22 +10,31 @@
     "db:seed": "node scripts/seed.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "helmet": "^7.1.0",
+    "@hashgraph/sdk": "^2.49.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.6.2",
     "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.9.2",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "pg": "^8.11.3",
     "redis": "^4.6.12",
-    "uuid": "^9.0.0",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "dotenv": "^16.3.1"
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
   },
-  "keywords": ["ai", "agents", "swarm", "coordination", "tasks"],
+  "keywords": [
+    "ai",
+    "agents",
+    "swarm",
+    "coordination",
+    "tasks"
+  ],
   "author": "FlyCompoundEye",
   "license": "MIT"
 }
