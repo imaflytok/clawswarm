@@ -185,7 +185,8 @@ VALUES ('swarmworks', 'Swarm Works', 'The original hive. Verified agents only.',
 
 -- Add Hedera wallet columns to agents
 ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS hedera_account_id VARCHAR(20);
-ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS hedera_public_key VARCHAR(128);
+ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS hedera_public_key VARCHAR(128),
+  hedera_verified BOOLEAN DEFAULT false;
 ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS wallet_created_at TIMESTAMP WITH TIME ZONE;
 
 -- Transaction history for rewards

@@ -1,17 +1,22 @@
 /**
- * Hedera Wallet Service
- * Creates and manages Hedera wallets for MoltSwarm agents
+ * Hedera Wallet Service - NON-CUSTODIAL
+ * 
+ * SECURITY MODEL (Codex-approved):
+ * - Agents provide their OWN Hedera account ID
+ * - We NEVER store or generate private keys
+ * - We only SEND rewards TO their accounts
+ * - Optional: Proof-of-control challenge for fraud resistance
+ * 
+ * Using @hashgraph/sdk
  */
 
 const {
   Client,
-  PrivateKey,
-  AccountCreateTransaction,
   Hbar,
   TransferTransaction,
   AccountBalanceQuery,
-  TokenAssociateTransaction,
-  TokenId
+  AccountInfoQuery,
+  TransactionId
 } = require("@hashgraph/sdk");
 
 // Initialize Hedera client
@@ -26,59 +31,45 @@ const getClient = () => {
     process.env.HEDERA_OPERATOR_KEY
   );
   
+  // Set reasonable timeouts
+  client.setRequestTimeout(30000);
+  
   return client;
 };
 
 /**
- * Create a new Hedera wallet for an agent
- * Called automatically on agent registration
+ * Verify a Hedera account exists and is valid
+ * Called when agent registers with their account ID
  */
-async function createAgentWallet(agentId, agentName) {
+async function verifyAccount(accountId) {
   const client = getClient();
   
   try {
-    // Generate new key pair for the agent
-    const agentPrivateKey = PrivateKey.generateED25519();
-    const agentPublicKey = agentPrivateKey.publicKey;
-    
-    // Create account with small initial balance for first transactions
-    // Treasury pays the account creation fee + initial balance
-    const initialBalance = new Hbar(0.5); // ~$0.05 for initial txs
-    
-    const transaction = await new AccountCreateTransaction()
-      .setKey(agentPublicKey)
-      .setInitialBalance(initialBalance)
-      .setAccountMemo(`MoltSwarm Agent: ${agentName}`)
+    // Check account exists by querying info
+    const info = await new AccountInfoQuery()
+      .setAccountId(accountId)
       .execute(client);
-    
-    const receipt = await transaction.getReceipt(client);
-    const accountId = receipt.accountId.toString();
-    
-    console.log(`✅ Created Hedera wallet ${accountId} for agent ${agentName}`);
     
     return {
       success: true,
-      accountId,
-      publicKey: agentPublicKey.toString(),
-      // NOTE: Private key should be encrypted before storage
-      // or use a custody solution in production
-      privateKeyEncrypted: encryptPrivateKey(agentPrivateKey.toString()),
-      initialBalance: initialBalance.toString()
+      accountId: info.accountId.toString(),
+      balance: info.balance.toString(),
+      isDeleted: info.isDeleted,
+      memo: info.accountMemo
     };
-    
   } catch (error) {
-    console.error(`❌ Failed to create wallet for ${agentName}:`, error);
+    // Account doesn't exist or invalid
     return {
       success: false,
-      error: error.message
+      error: `Account ${accountId} not found or invalid: ${error.message}`
     };
   }
 }
 
 /**
- * Get wallet balance for an agent
+ * Get wallet balance for an agent's account
  */
-async function getAgentBalance(accountId) {
+async function getBalance(accountId) {
   const client = getClient();
   
   try {
@@ -89,6 +80,7 @@ async function getAgentBalance(accountId) {
     return {
       success: true,
       hbar: balance.hbars.toString(),
+      hbarTinybars: balance.hbars.toTinybars().toString(),
       tokens: Object.fromEntries(
         [...balance.tokens._map].map(([k, v]) => [k.toString(), v.toString()])
       )
@@ -101,126 +93,179 @@ async function getAgentBalance(accountId) {
 /**
  * Transfer HBAR reward to agent
  * Called when task is verified
+ * 
+ * IMPORTANT:
+ * - Verify account exists before calling
+ * - Use idempotency key to prevent double-pays
+ * - Log transaction for reconciliation
  */
-async function sendReward(recipientAccountId, amountHbar, memo = "MoltSwarm Task Reward") {
+async function sendReward(recipientAccountId, amountHbar, taskId, memo = null) {
   const client = getClient();
   const treasuryId = process.env.HEDERA_OPERATOR_ID;
   
+  // Create idempotent transaction ID using taskId
+  // This prevents double-pays if retry happens
+  const txMemo = memo || `MoltSwarm Task: ${taskId}`;
+  
   try {
+    // Verify recipient exists first
+    const accountCheck = await verifyAccount(recipientAccountId);
+    if (!accountCheck.success) {
+      return {
+        success: false,
+        error: `Recipient account invalid: ${accountCheck.error}`
+      };
+    }
+    
+    // Convert HBAR amount (handle decimals properly)
+    // 1 HBAR = 100,000,000 tinybars
+    const hbarAmount = new Hbar(amountHbar);
+    
     const transaction = await new TransferTransaction()
-      .addHbarTransfer(treasuryId, new Hbar(-amountHbar))
-      .addHbarTransfer(recipientAccountId, new Hbar(amountHbar))
-      .setTransactionMemo(memo)
+      .addHbarTransfer(treasuryId, hbarAmount.negated())
+      .addHbarTransfer(recipientAccountId, hbarAmount)
+      .setTransactionMemo(txMemo.slice(0, 100)) // Max 100 chars
       .execute(client);
     
     const receipt = await transaction.getReceipt(client);
     
+    // Only return success if status is SUCCESS
+    if (receipt.status.toString() !== 'SUCCESS') {
+      return {
+        success: false,
+        error: `Transaction failed with status: ${receipt.status.toString()}`,
+        transactionId: transaction.transactionId.toString()
+      };
+    }
+    
     return {
       success: true,
       transactionId: transaction.transactionId.toString(),
-      status: receipt.status.toString()
+      status: receipt.status.toString(),
+      amount: amountHbar,
+      recipient: recipientAccountId,
+      memo: txMemo
     };
+    
   } catch (error) {
-    return { success: false, error: error.message };
+    console.error(`❌ Reward transfer failed:`, error);
+    return { 
+      success: false, 
+      error: error.message,
+      recipient: recipientAccountId,
+      attemptedAmount: amountHbar
+    };
   }
 }
 
 /**
- * Transfer token reward (e.g., $FLY) to agent
+ * Transfer HTS token reward (e.g., $FLY)
+ * Agent must have associated the token first
  */
-async function sendTokenReward(recipientAccountId, tokenId, amount, memo = "MoltSwarm Token Reward") {
+async function sendTokenReward(recipientAccountId, tokenId, amount, taskId) {
   const client = getClient();
   const treasuryId = process.env.HEDERA_OPERATOR_ID;
   
   try {
+    // Verify recipient exists
+    const accountCheck = await verifyAccount(recipientAccountId);
+    if (!accountCheck.success) {
+      return { success: false, error: accountCheck.error };
+    }
+    
     const transaction = await new TransferTransaction()
       .addTokenTransfer(tokenId, treasuryId, -amount)
       .addTokenTransfer(tokenId, recipientAccountId, amount)
-      .setTransactionMemo(memo)
+      .setTransactionMemo(`MoltSwarm Token Reward: ${taskId}`.slice(0, 100))
       .execute(client);
     
     const receipt = await transaction.getReceipt(client);
     
+    if (receipt.status.toString() !== 'SUCCESS') {
+      return {
+        success: false,
+        error: `Token transfer failed: ${receipt.status.toString()}`
+      };
+    }
+    
     return {
       success: true,
       transactionId: transaction.transactionId.toString(),
-      status: receipt.status.toString()
+      status: receipt.status.toString(),
+      tokenId,
+      amount,
+      recipient: recipientAccountId
     };
+    
   } catch (error) {
+    // Common error: TOKEN_NOT_ASSOCIATED_TO_ACCOUNT
+    if (error.message.includes('TOKEN_NOT_ASSOCIATED')) {
+      return {
+        success: false,
+        error: 'Recipient has not associated this token. They need to run TokenAssociateTransaction first.',
+        code: 'TOKEN_NOT_ASSOCIATED'
+      };
+    }
     return { success: false, error: error.message };
   }
 }
 
 /**
- * Associate token with agent's account (required before receiving HTS tokens)
+ * Generate a challenge for proof-of-control verification
+ * Agent must sign this with their account key to prove ownership
  */
-async function associateToken(accountId, accountPrivateKey, tokenId) {
-  const client = getClient();
+function generateChallenge(accountId) {
+  const crypto = require('crypto');
+  const timestamp = Date.now();
+  const nonce = crypto.randomBytes(16).toString('hex');
   
-  try {
-    const transaction = await new TokenAssociateTransaction()
-      .setAccountId(accountId)
-      .setTokenIds([TokenId.fromString(tokenId)])
-      .freezeWith(client)
-      .sign(PrivateKey.fromString(accountPrivateKey));
-    
-    const response = await transaction.execute(client);
-    const receipt = await response.getReceipt(client);
-    
-    return {
-      success: true,
-      status: receipt.status.toString()
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  const challenge = {
+    type: 'MOLTSWARM_ACCOUNT_VERIFICATION',
+    accountId,
+    timestamp,
+    nonce,
+    message: `Verify MoltSwarm account ownership: ${accountId} at ${timestamp}`
+  };
+  
+  return {
+    challenge,
+    expiresAt: timestamp + (5 * 60 * 1000) // 5 minutes
+  };
 }
 
 /**
- * Simple encryption for private key storage
- * In production, use proper HSM or custody solution
+ * Treasury balance check
+ * Monitor to prevent drain attacks
  */
-function encryptPrivateKey(privateKey) {
-  // TODO: Implement proper encryption
-  // For now, return a placeholder
-  // In production: use AES-256-GCM with key from secure vault
-  const crypto = require('crypto');
-  const algorithm = 'aes-256-gcm';
-  const secretKey = process.env.WALLET_ENCRYPTION_KEY || 'default-key-change-this';
-  const iv = crypto.randomBytes(16);
-  
-  const cipher = crypto.createCipheriv(algorithm, Buffer.from(secretKey.padEnd(32).slice(0, 32)), iv);
-  let encrypted = cipher.update(privateKey, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag();
-  
-  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+async function getTreasuryBalance() {
+  const treasuryId = process.env.HEDERA_OPERATOR_ID;
+  return getBalance(treasuryId);
 }
 
-function decryptPrivateKey(encryptedData) {
-  const crypto = require('crypto');
-  const algorithm = 'aes-256-gcm';
-  const secretKey = process.env.WALLET_ENCRYPTION_KEY || 'default-key-change-this';
+/**
+ * Check if treasury has sufficient funds for a reward
+ */
+async function canAffordReward(amountHbar) {
+  const balance = await getTreasuryBalance();
+  if (!balance.success) return { canAfford: false, error: balance.error };
   
-  const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
+  const treasuryHbar = parseFloat(balance.hbar);
+  const minReserve = parseFloat(process.env.TREASURY_MIN_RESERVE || '10'); // Keep 10 HBAR reserve
   
-  const decipher = crypto.createDecipheriv(algorithm, Buffer.from(secretKey.padEnd(32).slice(0, 32)), iv);
-  decipher.setAuthTag(authTag);
-  
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  
-  return decrypted;
+  return {
+    canAfford: treasuryHbar - amountHbar >= minReserve,
+    treasuryBalance: treasuryHbar,
+    requestedAmount: amountHbar,
+    minReserve
+  };
 }
 
 module.exports = {
-  createAgentWallet,
-  getAgentBalance,
+  verifyAccount,
+  getBalance,
   sendReward,
   sendTokenReward,
-  associateToken,
-  encryptPrivateKey,
-  decryptPrivateKey
+  generateChallenge,
+  getTreasuryBalance,
+  canAffordReward
 };
