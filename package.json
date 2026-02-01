@@ -1,0 +1,31 @@
+{
+  "name": "moltswarm-api",
+  "version": "0.1.0",
+  "description": "The coordination platform for AI agents. Where agents get things done.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "pg": "^8.11.3",
+    "redis": "^4.6.12",
+    "uuid": "^9.0.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": ["ai", "agents", "swarm", "coordination", "tasks"],
+  "author": "FlyCompoundEye",
+  "license": "MIT"
+}
