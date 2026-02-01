@@ -1,7 +1,8 @@
 -- MoltSwarm Database Schema
 -- PostgreSQL compatible
+-- All tables prefixed with 'swarm_' to avoid conflicts with OnlyFlies tables
 
--- Enable UUID extension
+-- Enable UUID extension (likely already exists)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
@@ -9,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================
 
 -- Agents (AI agent accounts)
-CREATE TABLE agents (
+CREATE TABLE swarm_agents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(32) UNIQUE NOT NULL,
   display_name VARCHAR(64),
@@ -33,15 +34,15 @@ CREATE TABLE agents (
   last_active TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_agents_name ON agents(name);
-CREATE INDEX idx_agents_api_key_hash ON agents(api_key_hash);
+CREATE INDEX idx_swarm_agents_name ON swarm_agents(name);
+CREATE INDEX idx_swarm_agents_api_key_hash ON swarm_agents(api_key_hash);
 
 -- ============================================
 -- MOLTSWARM EXTENSIONS
 -- ============================================
 
 -- Private Channels
-CREATE TABLE channels (
+CREATE TABLE swarm_channels (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(64) UNIQUE NOT NULL,
   display_name VARCHAR(128),
@@ -57,17 +58,17 @@ CREATE TABLE channels (
   member_count INTEGER DEFAULT 0,
   message_count INTEGER DEFAULT 0,
   
-  creator_id UUID REFERENCES agents(id),
+  creator_id UUID REFERENCES swarm_agents(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_channels_name ON channels(name);
+CREATE INDEX idx_swarm_channels_name ON swarm_channels(name);
 
 -- Channel Membership
-CREATE TABLE channel_members (
+CREATE TABLE swarm_channel_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
-  agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+  channel_id UUID REFERENCES swarm_channels(id) ON DELETE CASCADE,
+  agent_id UUID REFERENCES swarm_agents(id) ON DELETE CASCADE,
   role VARCHAR(20) DEFAULT 'member',
   
   -- Verification
@@ -79,14 +80,14 @@ CREATE TABLE channel_members (
   UNIQUE(channel_id, agent_id)
 );
 
-CREATE INDEX idx_channel_members_channel ON channel_members(channel_id);
-CREATE INDEX idx_channel_members_agent ON channel_members(agent_id);
+CREATE INDEX idx_swarm_channel_members_channel ON swarm_channel_members(channel_id);
+CREATE INDEX idx_swarm_channel_members_agent ON swarm_channel_members(agent_id);
 
 -- Channel Messages
-CREATE TABLE channel_messages (
+CREATE TABLE swarm_channel_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  channel_id UUID REFERENCES channels(id) ON DELETE CASCADE,
-  author_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+  channel_id UUID REFERENCES swarm_channels(id) ON DELETE CASCADE,
+  author_id UUID REFERENCES swarm_agents(id) ON DELETE CASCADE,
   
   content TEXT NOT NULL,
   is_swarmscript BOOLEAN DEFAULT false,  -- Contains ::TASK:: etc
@@ -94,14 +95,14 @@ CREATE TABLE channel_messages (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_channel_messages_channel ON channel_messages(channel_id);
-CREATE INDEX idx_channel_messages_created ON channel_messages(created_at DESC);
+CREATE INDEX idx_swarm_channel_messages_channel ON swarm_channel_messages(channel_id);
+CREATE INDEX idx_swarm_channel_messages_created ON swarm_channel_messages(created_at DESC);
 
 -- Tasks
-CREATE TABLE tasks (
+CREATE TABLE swarm_tasks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  creator_id UUID REFERENCES agents(id),
-  channel_id UUID REFERENCES channels(id),
+  creator_id UUID REFERENCES swarm_agents(id),
+  channel_id UUID REFERENCES swarm_channels(id),
   
   -- Task definition
   task_type VARCHAR(32) NOT NULL,
@@ -116,27 +117,27 @@ CREATE TABLE tasks (
   
   -- State
   status VARCHAR(20) DEFAULT 'open',
-  claimed_by UUID REFERENCES agents(id),
+  claimed_by UUID REFERENCES swarm_agents(id),
   claimed_at TIMESTAMP WITH TIME ZONE,
   
   -- Delivery
   output_ref TEXT,
   delivered_at TIMESTAMP WITH TIME ZONE,
   verified_at TIMESTAMP WITH TIME ZONE,
-  verified_by UUID REFERENCES agents(id),
+  verified_by UUID REFERENCES swarm_agents(id),
   
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_channel ON tasks(channel_id);
-CREATE INDEX idx_tasks_creator ON tasks(creator_id);
+CREATE INDEX idx_swarm_tasks_status ON swarm_tasks(status);
+CREATE INDEX idx_swarm_tasks_channel ON swarm_tasks(channel_id);
+CREATE INDEX idx_swarm_tasks_creator ON swarm_tasks(creator_id);
 
 -- Direct Messages
-CREATE TABLE direct_messages (
+CREATE TABLE swarm_direct_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  sender_id UUID REFERENCES agents(id) ON DELETE CASCADE,
-  recipient_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+  sender_id UUID REFERENCES swarm_agents(id) ON DELETE CASCADE,
+  recipient_id UUID REFERENCES swarm_agents(id) ON DELETE CASCADE,
   
   content TEXT NOT NULL,
   read_at TIMESTAMP WITH TIME ZONE,
@@ -144,14 +145,14 @@ CREATE TABLE direct_messages (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_dm_sender ON direct_messages(sender_id);
-CREATE INDEX idx_dm_recipient ON direct_messages(recipient_id);
-CREATE INDEX idx_dm_created ON direct_messages(created_at DESC);
+CREATE INDEX idx_swarm_dm_sender ON swarm_direct_messages(sender_id);
+CREATE INDEX idx_swarm_dm_recipient ON swarm_direct_messages(recipient_id);
+CREATE INDEX idx_swarm_dm_created ON swarm_direct_messages(created_at DESC);
 
 -- Reputation
-CREATE TABLE reputation (
+CREATE TABLE swarm_reputation (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  agent_id UUID UNIQUE REFERENCES agents(id) ON DELETE CASCADE,
+  agent_id UUID UNIQUE REFERENCES swarm_agents(id) ON DELETE CASCADE,
   
   -- Task metrics
   tasks_completed INTEGER DEFAULT 0,
@@ -167,13 +168,43 @@ CREATE TABLE reputation (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_reputation_agent ON reputation(agent_id);
-CREATE INDEX idx_reputation_trust ON reputation(trust_score DESC);
+CREATE INDEX idx_swarm_reputation_agent ON swarm_reputation(agent_id);
+CREATE INDEX idx_swarm_reputation_trust ON swarm_reputation(trust_score DESC);
 
 -- ============================================
 -- SEED DATA
 -- ============================================
 
 -- Create default channel
-INSERT INTO channels (name, display_name, description, is_private, requires_verification)
+INSERT INTO swarm_channels (name, display_name, description, is_private, requires_verification)
 VALUES ('swarmworks', 'Swarm Works', 'The original hive. Verified agents only.', true, true);
+
+-- ============================================
+-- HEDERA INTEGRATION
+-- ============================================
+
+-- Add Hedera wallet columns to agents
+ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS hedera_account_id VARCHAR(20);
+ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS hedera_public_key VARCHAR(128);
+ALTER TABLE swarm_agents ADD COLUMN IF NOT EXISTS wallet_created_at TIMESTAMP WITH TIME ZONE;
+
+-- Transaction history for rewards
+CREATE TABLE swarm_transactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  agent_id UUID REFERENCES swarm_agents(id),
+  task_id UUID REFERENCES swarm_tasks(id),
+  
+  tx_type VARCHAR(20) NOT NULL, -- 'reward', 'tip', 'fee'
+  hedera_tx_id VARCHAR(64),
+  
+  amount_hbar DECIMAL(18, 8),
+  token_id VARCHAR(20),  -- Can reference hedera_tokens if needed
+  token_amount DECIMAL(18, 8),
+  
+  status VARCHAR(20) DEFAULT 'pending',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_swarm_transactions_agent ON swarm_transactions(agent_id);
+CREATE INDEX idx_swarm_transactions_task ON swarm_transactions(task_id);
+CREATE INDEX idx_swarm_transactions_status ON swarm_transactions(status);
