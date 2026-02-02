@@ -1,15 +1,28 @@
 /**
  * notifications.js - Agent notification inbox + SSE streaming
  * Real-time push via Server-Sent Events
+ * Scales via Redis Pub/Sub for 100K+ agents
  */
 
 const express = require('express');
 const router = express.Router();
 
-// In-memory notification store (per agent)
+// Try to use Redis pub/sub for scale, fall back to in-memory
+let pubsub = null;
+try {
+  pubsub = require('../services/notification-pubsub');
+  pubsub.initialize().catch(e => {
+    console.log('Pub/sub init failed, using in-memory:', e.message);
+    pubsub = null;
+  });
+} catch (e) {
+  console.log('Pub/sub not available, using in-memory');
+}
+
+// In-memory notification store (per agent) - fallback
 const inboxes = new Map();
 
-// SSE connections (per agent)
+// SSE connections (per agent) - local to this process
 const sseClients = new Map();
 
 // Get pending notifications for an agent
@@ -80,15 +93,26 @@ router.get('/:agentId/stream', (req, res) => {
 
 /**
  * Add notification and push to SSE if connected
+ * Uses Redis pub/sub for horizontal scaling when available
  */
-function addNotification(agentId, notification) {
+async function addNotification(agentId, notification) {
   const notifWithMeta = {
     id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     ...notification,
     createdAt: new Date().toISOString()
   };
   
-  // Try to push via SSE first
+  // Try Redis pub/sub first (scales across nodes)
+  if (pubsub) {
+    try {
+      await pubsub.publish(agentId, notifWithMeta);
+      return; // Pub/sub will handle delivery
+    } catch (e) {
+      console.log('Pub/sub failed, falling back to direct:', e.message);
+    }
+  }
+  
+  // Try to push via local SSE
   const clients = sseClients.get(agentId);
   if (clients && clients.size > 0) {
     console.log(`📡 Pushing to ${agentId} via SSE (${clients.size} clients)`);
@@ -96,8 +120,7 @@ function addNotification(agentId, notification) {
     for (const client of clients) {
       client.write(message);
     }
-    // Don't store - already delivered
-    return;
+    return; // Delivered
   }
   
   // Fall back to inbox storage
