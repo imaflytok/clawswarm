@@ -13,7 +13,7 @@ const webhooks = new Map();
  * Initialize webhooks table and load existing
  */
 function initialize() {
-  const db = persistence.getDb();
+  const db = persistence.db;
   
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_webhooks (
@@ -46,7 +46,7 @@ function initialize() {
  */
 function register(agentId, url, events = ['mention', 'dm']) {
   const secret = crypto.randomBytes(32).toString('hex');
-  const db = persistence.getDb();
+  const db = persistence.db;
   
   db.prepare(`
     INSERT INTO agent_webhooks (agent_id, url, secret, events)
@@ -68,7 +68,7 @@ function register(agentId, url, events = ['mention', 'dm']) {
  * Remove webhook for agent
  */
 function unregister(agentId) {
-  const db = persistence.getDb();
+  const db = persistence.db;
   db.prepare('DELETE FROM agent_webhooks WHERE agent_id = ?').run(agentId);
   webhooks.delete(agentId);
   console.log(`🪝 Unregistered webhook for ${agentId}`);
@@ -151,7 +151,7 @@ async function fireWebhook(agentId, event, data) {
     
     if (response.ok) {
       // Update success timestamp
-      const db = persistence.getDb();
+      const db = persistence.db;
       db.prepare(`
         UPDATE agent_webhooks 
         SET last_success = ?, failure_count = 0 
@@ -167,7 +167,7 @@ async function fireWebhook(agentId, event, data) {
     console.error(`🪝 ✗ Webhook failed for ${agentId}: ${err.message}`);
     
     // Update failure count
-    const db = persistence.getDb();
+    const db = persistence.db;
     const result = db.prepare(`
       UPDATE agent_webhooks 
       SET last_failure = ?, failure_count = failure_count + 1
