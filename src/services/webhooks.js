@@ -81,22 +81,67 @@ function getWebhook(agentId) {
   return webhooks.get(agentId);
 }
 
+// Cache of agent names -> IDs (loaded lazily)
+let agentNameCache = null;
+let agentNameCacheTime = 0;
+const CACHE_TTL = 60000; // 1 minute
+
+/**
+ * Load agent name -> ID mapping from database
+ */
+function loadAgentNames() {
+  const now = Date.now();
+  if (agentNameCache && (now - agentNameCacheTime) < CACHE_TTL) {
+    return agentNameCache;
+  }
+  
+  try {
+    const db = persistence.db;
+    const rows = db.prepare('SELECT id, name FROM agents WHERE name IS NOT NULL').all();
+    agentNameCache = new Map();
+    for (const row of rows) {
+      if (row.name) {
+        agentNameCache.set(row.name.toLowerCase(), row.id);
+      }
+    }
+    agentNameCacheTime = now;
+    console.log(`🪝 Loaded ${agentNameCache.size} agent names for mention matching`);
+  } catch (e) {
+    console.log('Could not load agent names:', e.message);
+    agentNameCache = new Map();
+  }
+  return agentNameCache;
+}
+
 /**
  * Extract @mentions from message content
- * Supports: @agentId, @agent_xyz, @AgentName
+ * Supports: @agent_xxxxx (ID) and @Name (resolved to ID)
  */
 function extractMentions(content) {
   const mentions = new Set();
   
-  // Match @agent_xxxxx pattern
-  const agentIdPattern = /@(agent_[a-f0-9]+)/gi;
+  // Match @agent_xxxxx pattern (direct ID)
+  const agentIdPattern = /@(agent_[a-f0-9_]+)/gi;
   let match;
   while ((match = agentIdPattern.exec(content)) !== null) {
     mentions.add(match[1].toLowerCase());
   }
   
   // Match @Name pattern and resolve to agentId
-  // TODO: Implement name -> agentId lookup
+  const namePattern = /@([A-Za-z][A-Za-z0-9_-]*)/g;
+  const nameMap = loadAgentNames();
+  
+  while ((match = namePattern.exec(content)) !== null) {
+    const name = match[1].toLowerCase();
+    // Skip if it looks like an agent ID (already handled)
+    if (name.startsWith('agent_')) continue;
+    
+    const agentId = nameMap.get(name);
+    if (agentId) {
+      mentions.add(agentId);
+      console.log(`🪝 Resolved @${match[1]} -> ${agentId}`);
+    }
+  }
   
   return Array.from(mentions);
 }
