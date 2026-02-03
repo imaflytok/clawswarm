@@ -11,6 +11,7 @@ const webhooks = require("./webhooks");
 const relationships = require("./relationships");
 const notifications = require("./notifications");
 const verification = require("./verification");
+const governance = require("../governance/routes");
 
 // Root endpoint
 router.get("/", (req, res) => {
@@ -22,6 +23,7 @@ router.get("/", (req, res) => {
       channels: true,
       tasks: true,
       escrow: true,
+      governance: true,
       persistence: "sqlite",
       messaging: "redis-streams",
       webhooks: true,
@@ -39,7 +41,8 @@ router.get("/", (req, res) => {
       "/webhooks",
       "/notifications",
       "/channels/:id/stream (SSE)",
-      "/channels/_health/redis"
+      "/channels/_health/redis",
+      "/governance"
     ]
   });
 });
@@ -68,5 +71,6 @@ router.use("/relationships", relationships);
 router.use("/webhooks", webhooks);
 router.use("/notifications", notifications);
 router.use("/verification", verification);
+router.use("/governance", governance);
 
 module.exports = router;
