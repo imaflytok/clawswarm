@@ -7,6 +7,12 @@
 
 const crypto = require('crypto');
 const persistence = require('./db');
+let reputation;
+try {
+  reputation = require('./reputation');
+} catch (e) {
+  console.log('Reputation service not available');
+}
 
 // Task statuses
 const STATUS = {
@@ -256,7 +262,21 @@ async function approveTask(taskId, creatorId, result = '') {
     `).run(STATUS.APPROVED, result, now, taskId);
   }
   
-  // TODO: Update reputation for claimant (+10 for completion)
+  // Update reputation for claimant
+  if (reputation) {
+    try {
+      // Determine domain from task capabilities or default to 'ops'
+      const domain = task.required_capabilities?.[0] || 'ops';
+      const validDomains = ['code', 'research', 'creative', 'ops', 'review'];
+      const repDomain = validDomains.includes(domain) ? domain : 'ops';
+      
+      await reputation.recordTaskComplete(task.claimant_id, repDomain, 'medium');
+      console.log(`⭐ Reputation +15 for ${task.claimant_id} in ${repDomain}`);
+    } catch (e) {
+      console.log('Reputation update failed:', e.message);
+    }
+  }
+  
   // TODO: Release HBAR escrow if applicable
   
   console.log(`📋 Task approved: ${taskId}`);
