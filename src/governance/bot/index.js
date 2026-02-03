@@ -7,6 +7,7 @@ const { Telegraf } = require('telegraf');
 const config = require('../config');
 const staking = require('../services/staking');
 const proposals = require('../services/proposals');
+const serverCommitReveal = require('../services/server-commit-reveal');
 
 // Bot instance
 let bot = null;
@@ -238,17 +239,51 @@ _Vote: /vote ${proposal.id} approve|deny|abstain_`, { parse_mode: 'Markdown' });
         return ctx.reply('❌ No voting power. Stake $FLY and wait 7 days.');
       }
 
-      // Cast vote
-      const result = await proposals.vote(proposalId, stake.walletAddress, voteChoice, telegramId);
+      // Get proposal to check if commit-reveal needed
+      const proposal = proposals.getProposal(proposalId);
+      if (!proposal) {
+        return ctx.reply('❌ Proposal not found');
+      }
 
+      let result;
+      let message;
       const emoji = voteChoice === 'approve' ? '👍' : voteChoice === 'deny' ? '👎' : '🤷';
-      ctx.reply(`${emoji} *Vote Recorded!*
+
+      if (proposal.commitReveal) {
+        // Tier 2/3: Server-side commit-reveal
+        const revealTime = new Date(proposal.votingEnds).getTime();
+        const commitData = await serverCommitReveal.createCommitment(
+          proposalId, 
+          stake.walletAddress, 
+          voteChoice, 
+          revealTime
+        );
+        
+        // Submit commitment to proposals service
+        await proposals.commitVote(proposalId, stake.walletAddress, commitData.commitment, telegramId);
+        
+        const revealDate = commitData.revealAt.toLocaleDateString();
+        message = `${emoji} *Vote Committed!*
+
+Proposal: ${proposalId}
+Vote: 🔒 HIDDEN (until reveal)
+Power: ${votingPower.toLocaleString()} $FLY
+
+_Your vote will be revealed automatically on ${revealDate}._
+_This is Tier ${proposal.tier.slice(-1)} voting with commit-reveal._`;
+      } else {
+        // Tier 1: Direct voting
+        result = await proposals.vote(proposalId, stake.walletAddress, voteChoice, telegramId);
+        message = `${emoji} *Vote Recorded!*
 
 Proposal: ${proposalId}
 Vote: ${voteChoice.toUpperCase()}
 Power: ${votingPower.toLocaleString()} $FLY
 
-${result.commitReveal ? '_Your vote is committed. It will be revealed automatically._' : '_Vote counted immediately (Tier 1)._'}`, { parse_mode: 'Markdown' });
+_Vote counted immediately (Tier 1 fast-track)._`;
+      }
+
+      ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (e) {
       ctx.reply(`❌ ${e.message}`);
     }

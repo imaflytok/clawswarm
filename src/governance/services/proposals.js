@@ -405,10 +405,18 @@ function scheduleProposalTransitions(proposal) {
   }
 
   // Schedule voting end / reveal start
-  setTimeout(() => {
+  setTimeout(async () => {
     if (proposal.commitReveal) {
       proposal.status = 'revealing';
       console.log(`🔓 Reveal phase started: ${proposal.id}`);
+      
+      // Trigger auto-reveals from server-side storage
+      try {
+        const serverCommitReveal = require('./server-commit-reveal');
+        await serverCommitReveal.executeAutoReveals(proposal.id, revealVote);
+      } catch (e) {
+        console.error(`Auto-reveal error for ${proposal.id}:`, e.message);
+      }
     } else {
       resolveProposal(proposal.id);
     }
