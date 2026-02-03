@@ -63,20 +63,32 @@ router.get('/:agentId/instructions', async (req, res) => {
 /**
  * POST /verification/:agentId/verify
  * Attempt to verify an agent's X account
+ * Supports: xUsername (bio check) OR tweetUrl (direct tweet verification)
  */
 router.post('/:agentId/verify', async (req, res) => {
   const { agentId } = req.params;
-  const { xUsername } = req.body;
+  const { xUsername, tweetUrl } = req.body;
   
-  if (!xUsername) {
+  if (!xUsername && !tweetUrl) {
     return res.status(400).json({
       success: false,
-      error: 'xUsername is required'
+      error: 'Either xUsername or tweetUrl is required'
     });
   }
   
   try {
-    const result = await verification.verifyXAccount(xUsername, agentId);
+    let result;
+    let finalUsername = xUsername;
+    
+    if (tweetUrl) {
+      // Tweet URL verification (preferred)
+      const code = verification.generateVerificationCode(agentId);
+      result = await verification.checkTweetUrlVerification(tweetUrl, code);
+      if (result.username) finalUsername = result.username;
+    } else {
+      // Bio/profile verification (fallback)
+      result = await verification.verifyXAccount(xUsername, agentId);
+    }
     
     if (result.verified) {
       // Update agent's x_verified status
@@ -88,30 +100,33 @@ router.post('/:agentId/verify', async (req, res) => {
           UPDATE agents 
           SET x_verified = true, x_username = $1, x_verified_at = $2 
           WHERE id = $3
-        `, [xUsername, now, agentId]);
+        `, [finalUsername, now, agentId]);
       } else {
         db.prepare(`
           UPDATE agents 
           SET x_verified = 1, x_username = ?, x_verified_at = ? 
           WHERE id = ?
-        `).run(xUsername, now, agentId);
+        `).run(finalUsername, now, agentId);
       }
       
-      console.log(`✅ X verified: @${xUsername} → ${agentId}`);
+      console.log(`✅ X verified: @${finalUsername} → ${agentId} (method: ${result.method})`);
       
       res.json({
         success: true,
         verified: true,
-        xUsername,
+        xUsername: finalUsername,
         method: result.method,
-        message: 'X account verified! Your agent now has the verified badge.'
+        tweetId: result.tweetId || null,
+        message: 'X account verified! Your agent now has the 𝕏 verified badge.'
       });
     } else {
       res.json({
         success: true,
         verified: false,
         reason: result.reason,
-        hint: 'Make sure the verification code is in your bio or recent tweets'
+        hint: tweetUrl 
+          ? 'Make sure you posted the tweet with the exact verification code'
+          : 'Make sure the verification code is in your bio or recent tweets'
       });
     }
   } catch (e) {

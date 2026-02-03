@@ -94,7 +94,7 @@ async function checkBioVerification(xUsername, expectedCode) {
 }
 
 /**
- * Check for verification tweet via Nitter
+ * Check for verification tweet via Nitter (profile scan)
  */
 async function checkTweetVerification(xUsername, expectedCode) {
   const username = xUsername.replace('@', '').trim();
@@ -152,6 +152,131 @@ async function checkTweetVerification(xUsername, expectedCode) {
 }
 
 /**
+ * Verify via direct tweet URL (preferred method)
+ * Accepts: twitter.com/user/status/123 or x.com/user/status/123
+ */
+async function checkTweetUrlVerification(tweetUrl, expectedCode) {
+  // Parse tweet URL
+  const urlPatterns = [
+    /(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/,
+    /(?:nitter\.\w+)\/(\w+)\/status\/(\d+)/
+  ];
+  
+  let username = null;
+  let tweetId = null;
+  
+  for (const pattern of urlPatterns) {
+    const match = tweetUrl.match(pattern);
+    if (match) {
+      username = match[1];
+      tweetId = match[2];
+      break;
+    }
+  }
+  
+  if (!username || !tweetId) {
+    return {
+      verified: false,
+      method: 'tweet_url',
+      reason: 'Invalid tweet URL. Use format: twitter.com/username/status/123456'
+    };
+  }
+  
+  // Try Nitter instances to fetch the specific tweet
+  for (const instance of NITTER_INSTANCES) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      
+      const nitterUrl = `${instance}/${username}/status/${tweetId}`;
+      const response = await fetch(nitterUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; ClawSwarm/1.0)'
+        }
+      });
+      
+      clearTimeout(timeout);
+      
+      if (!response.ok) continue;
+      
+      const html = await response.text();
+      
+      // Check if tweet contains the verification code
+      if (html.includes(expectedCode)) {
+        console.log(`✅ Tweet URL verification passed for @${username} (tweet ${tweetId})`);
+        return {
+          verified: true,
+          method: 'tweet_url',
+          instance,
+          username,
+          tweetId,
+          tweetUrl
+        };
+      }
+      
+      return {
+        verified: false,
+        method: 'tweet_url',
+        instance,
+        username,
+        tweetId,
+        reason: 'Verification code not found in tweet'
+      };
+      
+    } catch (e) {
+      console.log(`Nitter ${instance} failed for tweet: ${e.message}`);
+      continue;
+    }
+  }
+  
+  // Fallback: try Twitter's oembed API (public, no auth needed)
+  try {
+    const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetUrl)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(oembedUrl, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeout);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.html && data.html.includes(expectedCode)) {
+        console.log(`✅ Tweet URL verification passed via oembed for @${username}`);
+        return {
+          verified: true,
+          method: 'tweet_url_oembed',
+          username,
+          tweetId,
+          tweetUrl
+        };
+      }
+      
+      return {
+        verified: false,
+        method: 'tweet_url_oembed',
+        username,
+        tweetId,
+        reason: 'Verification code not found in tweet'
+      };
+    }
+  } catch (e) {
+    console.log(`oembed fallback failed: ${e.message}`);
+  }
+  
+  return {
+    verified: false,
+    method: 'tweet_url',
+    reason: 'Could not fetch tweet - try again in a moment',
+    username,
+    tweetId
+  };
+}
+
+/**
  * Full verification check (tries bio first, then tweets)
  */
 async function verifyXAccount(xUsername, agentId) {
@@ -177,23 +302,29 @@ function getVerificationInstructions(agentId, agentName) {
   
   return {
     code,
+    tweetIntentUrl: tweetUrl,
     methods: [
       {
-        name: 'Bio Verification (Recommended)',
+        id: 'tweet',
+        name: 'Tweet Verification (Recommended)',
+        description: 'Quick one-click verification via tweet',
         steps: [
-          `Add this code to your X bio: ${code}`,
-          'Click "Verify" on ClawSwarm',
-          'Done! You can remove the code after verification'
-        ]
-      },
-      {
-        name: 'Tweet Verification',
-        steps: [
-          'Post the verification tweet',
-          'Click "Verify" on ClawSwarm',
-          'Keep the tweet up for at least 1 hour'
+          'Click the button below to post a verification tweet',
+          'Copy your tweet URL after posting',
+          'Paste it here and click Verify',
+          'Done! You can delete the tweet after'
         ],
         tweetUrl
+      },
+      {
+        id: 'bio',
+        name: 'Bio Verification',
+        description: 'Add code to your X bio (no public tweet)',
+        steps: [
+          `Add this code to your X bio: ${code}`,
+          'Enter your X username and click Verify',
+          'Done! You can remove the code after verification'
+        ]
       }
     ]
   };
@@ -204,6 +335,7 @@ module.exports = {
   generateTweetIntent,
   checkBioVerification,
   checkTweetVerification,
+  checkTweetUrlVerification,
   verifyXAccount,
   getVerificationInstructions
 };
