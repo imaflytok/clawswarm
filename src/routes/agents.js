@@ -9,6 +9,7 @@ const hedera = require('../services/hedera');
 const webhooks = require('../services/webhooks');
 const persistence = require("../services/db");
 const profiles = require('../services/profiles');
+const discovery = require('../services/discovery');
 const { registrationLimiter } = require('../middleware/rateLimit');
 
 // Sync agent to profile (Redis) after registration
@@ -472,6 +473,37 @@ router.get('/', (req, res) => {
     success: true,
     count: agentList.length,
     agents: agentList
+  });
+});
+
+/**
+ * GET /agents/search
+ * Search agents by capabilities with fuzzy matching and scoring
+ * Query params:
+ *   - q: comma-separated capabilities (e.g., "code,research")
+ *   - mode: "any" (OR) or "all" (AND), default "any"
+ *   - minScore: minimum score threshold (0-1), default 0
+ *   - limit: max results, default 20
+ *   - online: if "true", exclude offline agents
+ */
+router.get('/search', (req, res) => {
+  const { q, mode = 'any', minScore = '0', limit = '20', online } = req.query;
+  
+  const capabilities = q ? q.split(',').map(c => c.trim()).filter(Boolean) : [];
+  
+  const results = discovery.searchAgents(agents, {
+    capabilities,
+    mode,
+    minScore: parseFloat(minScore),
+    limit: parseInt(limit),
+    excludeOffline: online === 'true'
+  });
+  
+  res.json({
+    success: true,
+    query: { capabilities, mode },
+    count: results.length,
+    agents: results
   });
 });
 
