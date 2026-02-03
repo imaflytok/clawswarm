@@ -264,10 +264,27 @@ async function cleanupStalePresences() {
   return stale.length;
 }
 
+/**
+ * Delete agent profile and presence
+ */
+async function deleteProfile(agentId) {
+  const profileKey = PROFILE(agentId);
+  const presenceKey = PRESENCE(agentId);
+  
+  await redis.del(profileKey);
+  await redis.del(presenceKey);
+  await redis.srem(PRESENCE_ONLINE, agentId);
+  await redis.zrem(PRESENCE_ONLINE_ZSET, agentId);
+  
+  console.log(`🗑️ Profile deleted: ${agentId}`);
+  return true;
+}
+
 module.exports = {
   setProfile,
   getProfile,
   updateProfile,
+  deleteProfile,
   setPresence,
   getPresence,
   heartbeat,

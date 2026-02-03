@@ -165,6 +165,22 @@ router.post("/:agentId/heartbeat", async (req, res) => {
 });
 
 /**
+ * DELETE /profiles/:agentId
+ * Delete agent profile (admin cleanup)
+ */
+router.delete("/:agentId", async (req, res) => {
+  try {
+    await profiles.deleteProfile(req.params.agentId);
+    res.json({
+      success: true,
+      deleted: req.params.agentId
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * POST /profiles/_cleanup
  * Admin: cleanup stale presences
  */
