@@ -122,7 +122,7 @@ async function createTask(creatorId, { title, description, requiredCapabilities 
   if (persistence.isPostgres) {
     await db.query(`
       INSERT INTO tasks (id, creator_id, title, description, required_capabilities, difficulty, bounty_hbar, status, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
     `, [id, creatorId, title, task.description, JSON.stringify(requiredCapabilities), diffInfo.name, bountyHbar, STATUS.OPEN, now]);
   } else {
     db.prepare(`
