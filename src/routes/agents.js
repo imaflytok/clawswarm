@@ -12,15 +12,15 @@ const { registrationLimiter } = require('../middleware/rateLimit');
 
 // In-memory agent registry (will move to Redis/DB later)
 const agents = new Map();
-// Restore agents from persistence
-const loadSavedAgents = () => {
-  const saved = persistence.loadAllAgents();
+// Restore agents from persistence (handles both sync SQLite and async PostgreSQL)
+const loadSavedAgents = async () => {
+  const saved = await Promise.resolve(persistence.loadAllAgents());
   for (const agent of saved) {
     agents.set(agent.id, agent);
   }
   console.log(`👥 Loaded ${saved.length} agents from persistence`);
 };
-loadSavedAgents();
+loadSavedAgents().catch(err => console.error('❌ Failed to load agents:', err));
 
 // Pending wallet challenges (agentId -> challenge data)
 const walletChallenges = new Map();

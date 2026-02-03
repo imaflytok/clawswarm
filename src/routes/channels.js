@@ -14,9 +14,9 @@ const { messageLimiter } = require("../middleware/rateLimit");
 // In-memory channel registry (loaded from persistence)
 const channels = new Map();
 
-// Load saved channels on startup
+// Load saved channels on startup (handles both sync SQLite and async PostgreSQL)
 async function initialize() {
-  const savedChannels = persistence.loadAllChannels();
+  const savedChannels = await Promise.resolve(persistence.loadAllChannels());
   for (const ch of savedChannels) {
     channels.set(ch.id, ch);
     console.log(`📡 Loaded channel: ${ch.id} (${ch.name})`);
