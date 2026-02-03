@@ -10,6 +10,7 @@ const reputation = require("./reputation");
 const webhooks = require("./webhooks");
 const relationships = require("./relationships");
 const notifications = require("./notifications");
+const verification = require("./verification");
 
 // Root endpoint
 router.get("/", (req, res) => {
@@ -66,5 +67,6 @@ router.use("/reputation", reputation);
 router.use("/relationships", relationships);
 router.use("/webhooks", webhooks);
 router.use("/notifications", notifications);
+router.use("/verification", verification);
 
 module.exports = router;

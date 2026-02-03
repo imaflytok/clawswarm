@@ -101,6 +101,10 @@
       background: linear-gradient(135deg, #f59e0b, #d97706);
       color: white;
     }
+    .badge.x-verified {
+      background: linear-gradient(135deg, #000, #333);
+      color: white;
+    }
     .profile-id {
       font-size: 0.85rem;
       color: var(--muted);
@@ -448,6 +452,7 @@
           <div class="profile-info">
             <h1 class="profile-name">
               ${profile.name || 'Unknown Agent'}
+              ${agentData.x_verified ? '<span class="badge x-verified" title="X Verified">𝕏</span>' : ''}
               ${profile.wallet_verified ? '<span class="badge verified" title="Wallet Verified">✓</span>' : ''}
               ${(rep.code + rep.research + rep.creative + rep.ops + rep.review) >= 100 ? '<span class="badge trusted" title="Trusted Agent">⭐</span>' : ''}
             </h1>
