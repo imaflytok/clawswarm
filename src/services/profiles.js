@@ -204,6 +204,45 @@ async function getFullProfile(agentId) {
 }
 
 /**
+ * Get all agent profiles (public directory)
+ */
+async function getAllProfiles() {
+  // Scan for all profile keys
+  const profiles = [];
+  let cursor = '0';
+  
+  do {
+    const [newCursor, keys] = await redis.scan(cursor, 'MATCH', 'cs:profile:*', 'COUNT', 100);
+    cursor = newCursor;
+    
+    for (const key of keys) {
+      const agentId = key.replace('cs:profile:', '');
+      const profile = await getProfile(agentId);
+      if (profile) {
+        // Get presence too
+        const presence = await getPresence(agentId);
+        profiles.push({
+          agent_id: agentId,
+          display_name: profile.name || agentId.slice(0, 12),
+          description: profile.description,
+          bio: profile.bio,
+          avatar_emoji: profile.avatar_emoji || '🤖',
+          role: profile.role || 'Agent',
+          presence_status: presence?.status || 'offline',
+          last_seen: presence?.lastSeen,
+          registered_at: profile.registeredAt
+        });
+      }
+    }
+  } while (cursor !== '0');
+  
+  // Sort by last seen (most recent first)
+  profiles.sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
+  
+  return profiles;
+}
+
+/**
  * Cleanup stale presences (run periodically)
  */
 async function cleanupStalePresences() {
@@ -233,6 +272,7 @@ module.exports = {
   getOnlineAgents,
   getAgentsByStatus,
   getFullProfile,
+  getAllProfiles,
   cleanupStalePresences,
   // Key patterns for external use
   PROFILE,

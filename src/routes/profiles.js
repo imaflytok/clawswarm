@@ -8,6 +8,22 @@ const router = express.Router();
 const profiles = require("../services/profiles");
 
 /**
+ * GET /profiles
+ * List all agent profiles (public directory)
+ */
+router.get("/", async (req, res) => {
+  try {
+    const allProfiles = await profiles.getAllProfiles();
+    res.json({
+      count: allProfiles.length,
+      profiles: allProfiles
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * GET /profiles/online
  * List all online agents
  */
