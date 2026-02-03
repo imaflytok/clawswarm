@@ -914,3 +914,196 @@ router.get("/:agentId/webhook", (req, res) => {
 });
 
 module.exports = router;
+
+/**
+ * POST /agents/connect
+ * Reconnect an existing agent using API key
+ * For extensions/clients that need to reconnect after restart
+ */
+router.post('/connect', (req, res) => {
+  const { apiKey, name } = req.body;
+  
+  if (!apiKey && !name) {
+    return res.status(400).json({
+      success: false,
+      error: 'Either apiKey or name required'
+    });
+  }
+  
+  let agent = null;
+  
+  // Find by API key (preferred)
+  if (apiKey) {
+    for (const [id, a] of agents) {
+      if (a.apiKey === apiKey) {
+        agent = a;
+        break;
+      }
+    }
+  }
+  
+  // Or find by name
+  if (!agent && name) {
+    for (const [id, a] of agents) {
+      if (a.name && a.name.toLowerCase() === name.toLowerCase()) {
+        agent = a;
+        break;
+      }
+    }
+  }
+  
+  if (!agent) {
+    return res.status(404).json({
+      success: false,
+      error: 'Agent not found. Use /agents/register for new agents.',
+      hint: apiKey ? 'API key not recognized' : 'No agent with that name'
+    });
+  }
+  
+  // Update status
+  agent.lastSeen = new Date().toISOString();
+  agent.status = 'online';
+  agents.set(agent.id, agent);
+  persistence.saveAgent(agent);
+  syncAgentToProfile(agent);
+  
+  console.log(`🔄 Agent reconnected: ${agent.name} (${agent.id})`);
+  
+  // Return full agent info including API key
+  res.json({
+    success: true,
+    message: 'Agent reconnected',
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      apiKey: agent.apiKey,
+      description: agent.description,
+      capabilities: agent.capabilities,
+      hedera_wallet: agent.hedera_wallet,
+      wallet_verified: agent.wallet_verified,
+      reputation: agent.reputation,
+      endpoints: {
+        status: `/api/v1/agents/${agent.id}`,
+        heartbeat: `/api/v1/agents/${agent.id}/heartbeat`,
+        tasks: `/api/v1/agents/${agent.id}/tasks`,
+        channels: '/api/v1/channels'
+      }
+    }
+  });
+});
+
+/**
+ * POST /agents/register-or-connect
+ * Idempotent registration - registers new agent OR reconnects existing one
+ * This is the safest endpoint for extensions that may restart
+ */
+router.post('/register-or-connect', registrationLimiter, (req, res) => {
+  const { name, description, capabilities, apiKey } = req.body;
+  
+  if (!name) {
+    return res.status(400).json({
+      success: false,
+      error: 'Agent name is required'
+    });
+  }
+  
+  // Check if agent exists
+  let existingAgent = null;
+  for (const [id, a] of agents) {
+    if (a.name && a.name.toLowerCase() === name.toLowerCase()) {
+      existingAgent = a;
+      break;
+    }
+  }
+  
+  if (existingAgent) {
+    // Reconnect existing agent
+    // Optionally verify API key if provided
+    if (apiKey && existingAgent.apiKey !== apiKey) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key for existing agent'
+      });
+    }
+    
+    // Update lastSeen
+    existingAgent.lastSeen = new Date().toISOString();
+    existingAgent.status = 'online';
+    
+    // Update description/capabilities if provided
+    if (description) existingAgent.description = description;
+    if (capabilities) existingAgent.capabilities = capabilities;
+    
+    agents.set(existingAgent.id, existingAgent);
+    persistence.saveAgent(existingAgent);
+    syncAgentToProfile(existingAgent);
+    
+    console.log(`🔄 Agent reconnected via register-or-connect: ${existingAgent.name} (${existingAgent.id})`);
+    
+    return res.json({
+      success: true,
+      reconnected: true,
+      message: 'Existing agent reconnected',
+      agent: {
+        id: existingAgent.id,
+        name: existingAgent.name,
+        apiKey: existingAgent.apiKey,
+        description: existingAgent.description,
+        capabilities: existingAgent.capabilities,
+        endpoints: {
+          status: `/api/v1/agents/${existingAgent.id}`,
+          heartbeat: `/api/v1/agents/${existingAgent.id}/heartbeat`,
+          tasks: `/api/v1/agents/${existingAgent.id}/tasks`,
+          channels: '/api/v1/channels'
+        }
+      }
+    });
+  }
+  
+  // Register new agent
+  const agentId = generateAgentId();
+  const newApiKey = generateApiKey();
+  
+  const agent = {
+    id: agentId,
+    name,
+    description: description || '',
+    capabilities: capabilities || [],
+    platforms: [],
+    hedera_wallet: null,
+    wallet_verified: false,
+    status: 'online',
+    registeredAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
+    reputation: 100,
+    tasksCompleted: 0,
+    tasksFailed: 0,
+    totalEarnings: 0,
+    apiKey: newApiKey
+  };
+  
+  agents.set(agentId, agent);
+  persistence.saveAgent(agent);
+  syncAgentToProfile(agent);
+  
+  console.log(`🐝 New agent registered via register-or-connect: ${name} (${agentId})`);
+  
+  res.status(201).json({
+    success: true,
+    reconnected: false,
+    message: 'New agent registered',
+    agent: {
+      id: agentId,
+      name,
+      apiKey: newApiKey,
+      description: agent.description,
+      capabilities: agent.capabilities,
+      endpoints: {
+        status: `/api/v1/agents/${agentId}`,
+        heartbeat: `/api/v1/agents/${agentId}/heartbeat`,
+        tasks: `/api/v1/agents/${agentId}/tasks`,
+        channels: '/api/v1/channels'
+      }
+    }
+  });
+});
