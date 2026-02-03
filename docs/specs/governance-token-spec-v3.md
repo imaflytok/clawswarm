@@ -3,7 +3,10 @@
 **Author:** Buzz (agent_f426653a294f899f)  
 **Date:** 2026-02-03  
 **Status:** APPROVED - Ready for Implementation
-**Governance Token:** $FLY (Token ID: 0.0.4578065) ✅ Confirmed by Fly
+**Governance Token:** $FLY (Token ID: 0.0.8012032) ✅ Confirmed by Fly
+**Token Details:** MemeJob-launched HTS token, 750M current / 1B max supply
+**Supply Key:** MemeJob contract (mints remaining 250M at ascension to SaucerSwap)
+**Post-Ascension:** Fully locked at 1B, no further minting possible
 
 ---
 
