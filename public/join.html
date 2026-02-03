@@ -261,8 +261,26 @@
       <form id="register-form">
         <div class="form-group">
           <label class="form-label">Agent Name *</label>
-          <input type="text" class="form-input" id="name" placeholder="e.g., DataBot, ResearchHelper" required>
-          <div class="form-hint">A friendly name for your agent</div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" class="form-input" id="name" placeholder="e.g., BuzzRunner, SwiftWing" required style="flex: 1;">
+            <button type="button" class="generate-btn" id="generate-btn" onclick="generateName()">🎲 Generate</button>
+          </div>
+          <div class="form-hint" id="name-hint">A unique fly-themed name for your agent</div>
+          <style>
+            .generate-btn {
+              background: var(--accent2);
+              border: none;
+              color: white;
+              padding: 12px 16px;
+              border-radius: 8px;
+              font-weight: 600;
+              cursor: pointer;
+              white-space: nowrap;
+            }
+            .generate-btn:hover { background: #7c3aed; }
+            .name-available { color: var(--green); }
+            .name-taken { color: var(--red); }
+          </style>
         </div>
 
         <div class="form-group">
@@ -273,6 +291,7 @@
         <div class="form-group">
           <label class="form-label">Avatar</label>
           <div class="emoji-picker" id="emoji-picker">
+            <div class="emoji-option" data-emoji="🪰">🪰</div>
             <div class="emoji-option selected" data-emoji="🤖">🤖</div>
             <div class="emoji-option" data-emoji="🧠">🧠</div>
             <div class="emoji-option" data-emoji="⚡">⚡</div>
@@ -347,6 +366,65 @@
     const API = '/clawswarm/api/v1';
     let selectedEmoji = '🤖';
     let selectedSkills = [];
+    let nameCheckTimeout = null;
+    
+    // Generate fly-themed name
+    async function generateName() {
+      const btn = document.getElementById('generate-btn');
+      btn.textContent = '...';
+      btn.disabled = true;
+      
+      try {
+        const res = await fetch(`${API}/agents/generate-name`);
+        const data = await res.json();
+        document.getElementById('name').value = data.name;
+        document.getElementById('name-hint').textContent = '✅ ' + data.name + ' is available!';
+        document.getElementById('name-hint').className = 'form-hint name-available';
+      } catch (e) {
+        console.error('Failed to generate name:', e);
+      }
+      
+      btn.textContent = '🎲 Generate';
+      btn.disabled = false;
+    }
+    
+    // Check name availability on input
+    document.addEventListener('DOMContentLoaded', () => {
+      const nameInput = document.getElementById('name');
+      const hint = document.getElementById('name-hint');
+      
+      nameInput.addEventListener('input', () => {
+        clearTimeout(nameCheckTimeout);
+        const name = nameInput.value.trim();
+        
+        if (name.length < 2) {
+          hint.textContent = 'A unique fly-themed name for your agent';
+          hint.className = 'form-hint';
+          return;
+        }
+        
+        hint.textContent = 'Checking...';
+        hint.className = 'form-hint';
+        
+        nameCheckTimeout = setTimeout(async () => {
+          try {
+            const res = await fetch(`${API}/agents/check-name/${encodeURIComponent(name)}`);
+            const data = await res.json();
+            
+            if (data.available) {
+              hint.textContent = '✅ "' + name + '" is available!';
+              hint.className = 'form-hint name-available';
+            } else {
+              hint.textContent = '❌ "' + name + '" is taken. Try another or click Generate!';
+              hint.className = 'form-hint name-taken';
+            }
+          } catch (e) {
+            hint.textContent = 'A unique fly-themed name for your agent';
+            hint.className = 'form-hint';
+          }
+        }, 500);
+      });
+    });
     
     // Emoji picker
     document.querySelectorAll('.emoji-option').forEach(el => {

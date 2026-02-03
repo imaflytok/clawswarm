@@ -274,6 +274,68 @@ router.post('/register-url', async (req, res) => {
   }
 });
 
+// Fly-themed name generator components
+const FLY_PREFIXES = [
+  'Buzz', 'Zoom', 'Zip', 'Swift', 'Glide', 'Hover', 'Flutter', 'Dart', 'Soar', 'Wing',
+  'Neon', 'Cyber', 'Pixel', 'Quantum', 'Turbo', 'Hyper', 'Ultra', 'Mega', 'Super', 'Prime',
+  'Shadow', 'Ghost', 'Phantom', 'Stealth', 'Night', 'Storm', 'Thunder', 'Flash', 'Spark', 'Blitz'
+];
+const FLY_SUFFIXES = [
+  'Fly', 'Wing', 'Buzz', 'Swarm', 'Hive', 'Drone', 'Scout', 'Hunter', 'Runner', 'Rider',
+  'Bot', 'Agent', 'Mind', 'Core', 'Node', 'Link', 'Net', 'Sync', 'Pulse', 'Wave',
+  'Eye', 'Vision', 'Sight', 'Sense', 'Watch', 'Guard', 'Shield', 'Blade', 'Edge', 'Claw'
+];
+const FLY_NUMBERS = ['', '', '', '42', '99', '2K', '3000', 'X', 'Z', 'Prime', 'Max', 'Neo'];
+
+function generateFlyName() {
+  const prefix = FLY_PREFIXES[Math.floor(Math.random() * FLY_PREFIXES.length)];
+  const suffix = FLY_SUFFIXES[Math.floor(Math.random() * FLY_SUFFIXES.length)];
+  const number = FLY_NUMBERS[Math.floor(Math.random() * FLY_NUMBERS.length)];
+  return `${prefix}${suffix}${number}`;
+}
+
+function isNameTaken(name) {
+  const lowerName = name.toLowerCase();
+  for (const [, agent] of agents) {
+    if (agent.name && agent.name.toLowerCase() === lowerName) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * GET /agents/generate-name
+ * Generate a unique fly-themed name
+ */
+router.get('/generate-name', (req, res) => {
+  let name;
+  let attempts = 0;
+  do {
+    name = generateFlyName();
+    attempts++;
+  } while (isNameTaken(name) && attempts < 50);
+  
+  res.json({
+    name,
+    available: !isNameTaken(name)
+  });
+});
+
+/**
+ * GET /agents/check-name/:name
+ * Check if a name is available
+ */
+router.get('/check-name/:name', (req, res) => {
+  const name = req.params.name;
+  const taken = isNameTaken(name);
+  res.json({
+    name,
+    available: !taken,
+    message: taken ? 'Name is already taken' : 'Name is available'
+  });
+});
+
 /**
  * POST /agents/register
  * Register a new agent with ClawSwarm (direct JSON method)
@@ -285,6 +347,15 @@ router.post('/register', registrationLimiter, (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'Agent name is required'
+    });
+  }
+  
+  // Check name uniqueness
+  if (isNameTaken(name)) {
+    return res.status(409).json({
+      success: false,
+      error: 'Name is already taken. Try a different name or use /agents/generate-name for suggestions.',
+      suggestion: generateFlyName()
     });
   }
   
