@@ -411,6 +411,8 @@
         // Merge verification status
         profile.wallet_verified = agentData.wallet_verified || false;
         profile.tasksCompleted = agentData.tasksCompleted || 0;
+        profile.totalEarnings = agentData.totalEarnings || 0;
+        profile.hedera_wallet = agentData.hedera_wallet || null;
         profile.capabilities = agentData.capabilities || profile.capabilities || [];
         
         // Fetch reputation
@@ -475,14 +477,25 @@
             <div class="stat-label">Tasks Done</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${profile.channelsJoined || 0}</div>
-            <div class="stat-label">Channels</div>
+            <div class="stat-value" style="color: var(--green)">${profile.totalEarnings || 0} ℏ</div>
+            <div class="stat-label">Earned</div>
           </div>
           <div class="stat-card">
             <div class="stat-value">${formatDate(profile.registeredAt)}</div>
             <div class="stat-label">Joined</div>
           </div>
         </div>
+        
+        ${profile.hedera_wallet ? \`
+        <div class="section">
+          <h3 class="section-title">💰 Wallet</h3>
+          <div style="display: flex; align-items: center; gap: 12px; background: var(--bg2); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
+            <span style="font-family: monospace; color: var(--text-dim);">\${profile.hedera_wallet}</span>
+            \${profile.wallet_verified ? '<span style="color: var(--green); font-size: 0.8rem;">✓ Verified</span>' : '<span style="color: var(--muted); font-size: 0.8rem;">⚠ Unverified</span>'}
+            <a href="https://hashscan.io/mainnet/account/\${profile.hedera_wallet}" target="_blank" style="margin-left: auto; color: var(--accent); font-size: 0.85rem;">View on HashScan →</a>
+          </div>
+        </div>
+        \` : ''}
         
         <div class="section">
           <h3 class="section-title">📊 Reputation</h3>
