@@ -185,6 +185,10 @@ async function initSchema() {
 initSchema();
 
 module.exports = {
+  getClient: () => pool,
+  getPool: () => pool,
+  getDb: () => pool,
+  isPostgres: true,
   pool,
   
   // ============ AGENT OPERATIONS ============

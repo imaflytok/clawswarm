@@ -4,6 +4,12 @@
  */
 
 require('dotenv').config();
+
+// Prevent unhandled rejections from crashing the process
+process.on('unhandledRejection', (err) => {
+  console.error('⚠️ Unhandled rejection (non-fatal):', err.message || err);
+});
+
 const app = require('./app');
 const webhooks = require('./services/webhooks');
 const governance = require('./governance');

@@ -21,7 +21,7 @@ async function initialize() {
   // Start bot if token is provided
   const botToken = process.env.GOVERNANCE_BOT_TOKEN;
   if (botToken) {
-    await bot.start(botToken);
+    bot.start(botToken).catch(err => console.error("⚠️ Governance bot failed (non-fatal):", err.message));
     console.log('🤖 Governance bot started');
   } else {
     console.log('⚠️ GOVERNANCE_BOT_TOKEN not set, bot disabled');

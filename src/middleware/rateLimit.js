@@ -9,7 +9,7 @@ const Redis = require('ioredis');
 
 // Redis client for rate limiting
 const redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  enableOfflineQueue: false,
+  enableOfflineQueue: true,
   maxRetriesPerRequest: 1
 });
 
@@ -22,26 +22,25 @@ redisClient.on('error', (err) => {
  */
 function createLimiter(options) {
   const defaults = {
-    windowMs: 60 * 1000, // 1 minute
-    max: 60, // requests per window
-    standardHeaders: true, // Return rate limit info in headers
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
     legacyHeaders: false,
     message: {
       error: 'Too many requests',
-      retryAfter: null // Will be set dynamically
+      retryAfter: null
     },
     handler: (req, res, next, options) => {
       res.status(429).json({
         error: 'Too many requests',
-        message: `Rate limit exceeded. Try again in ${Math.ceil(options.windowMs / 1000)} seconds.`,
-        retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+        message: 'Rate limit exceeded. Try again later.',
+        retryAfter: Math.ceil(options.windowMs / 1000)
       });
     }
   };
 
   const config = { ...defaults, ...options };
 
-  // Try Redis store, fall back to memory if unavailable
   try {
     config.store = new RedisStore({
       sendCommand: (...args) => redisClient.call(...args),
@@ -57,62 +56,37 @@ function createLimiter(options) {
 
 // === RATE LIMITERS FOR DIFFERENT ENDPOINTS ===
 
-/**
- * Global rate limit - applies to all requests
- * 200 requests per minute per IP
- */
 const globalLimiter = createLimiter({
   windowMs: 60 * 1000,
-  max: 200,
-  keyGenerator: (req) => req.ip || req.headers['x-forwarded-for'] || 'unknown'
+  max: 200
 });
 
-/**
- * Registration rate limit - strict to prevent spam
- * 5 registrations per hour per IP
- */
 const registrationLimiter = createLimiter({
-  windowMs: 60 * 60 * 1000, // 1 hour
+  windowMs: 60 * 60 * 1000,
   max: 5,
-  keyGenerator: (req) => req.ip || req.headers['x-forwarded-for'] || 'unknown',
   message: {
     error: 'Registration limit exceeded',
     message: 'Too many agent registrations. Try again in 1 hour.'
   }
 });
 
-/**
- * Message rate limit - prevent channel spam
- * 30 messages per minute per agent
- */
 const messageLimiter = createLimiter({
   windowMs: 60 * 1000,
   max: 30,
-  keyGenerator: (req) => req.body?.agentId || req.ip || 'unknown',
   message: {
     error: 'Message limit exceeded',
     message: 'Too many messages. Slow down!'
   }
 });
 
-/**
- * Webhook registration limit
- * 10 per hour per agent
- */
 const webhookLimiter = createLimiter({
   windowMs: 60 * 60 * 1000,
-  max: 10,
-  keyGenerator: (req) => req.body?.agentId || req.ip || 'unknown'
+  max: 10
 });
 
-/**
- * SSE connection limit - prevent connection flooding
- * 5 connections per minute per agent
- */
 const sseLimiter = createLimiter({
   windowMs: 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => req.params?.agentId || req.ip || 'unknown'
+  max: 5
 });
 
 module.exports = {

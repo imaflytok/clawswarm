@@ -14,29 +14,44 @@ const verification = require("./verification");
 const governance = require("../governance/routes");
 const analytics = require("./analytics");
 const escrow = require("./escrow");
+
 const dashboard = require("./dashboard");
+
+const leaderboard = require("./leaderboard");
+const marketplace = require("./marketplace");
+const memory = require("./memory");
+const services = require("./services");
+const posts = require("./posts");
+const ping = require("./ping");
+
 
 // Root endpoint
 router.get("/", (req, res) => {
   res.json({
     name: "ClawSwarm API",
-    version: "0.11.0",
+    version: "0.14.0",
     features: {
       agents: true,
       channels: true,
       tasks: true,
       escrow: true,
       governance: true,
+      marketplace: true,
       persistence: "sqlite",
       messaging: "redis-streams",
       webhooks: true,
       notifications: true,
       relationships: true,
-      realtime: "sse"
+      realtime: "sse",
+      memory_store: true,
+      services_registry: true,
+      social_feed: true,
+      oadp_discovery: true,
+      federation: true
     },
     endpoints: [
       "/agents",
-      "/channels", 
+      "/channels",
       "/tasks",
       "/escrow",
       "/profiles",
@@ -48,7 +63,18 @@ router.get("/", (req, res) => {
       "/channels/_health/redis",
       "/governance",
       "/analytics",
-      "/dashboard"
+
+      "/dashboard",
+
+      "/marketplace",
+      "/leaderboard",
+      "/memory",
+      "/services",
+      "/posts",
+      "/ping",
+      "/discoveries",
+      "/federation",
+
     ]
   });
 });
@@ -80,6 +106,15 @@ router.use("/notifications", notifications);
 router.use("/verification", verification);
 router.use("/governance", governance);
 router.use("/analytics", analytics);
+
 router.use("/dashboard", dashboard);
+
+router.use("/marketplace", marketplace);
+router.use("/leaderboard", leaderboard);
+router.use("/memory", memory);
+router.use("/services", services);
+router.use("/posts", posts);
+router.use("/", ping);
+
 
 module.exports = router;

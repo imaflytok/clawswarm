@@ -11,28 +11,106 @@ const tasks = require('../services/tasks');
 tasks.initialize().catch(console.error);
 
 /**
+ * GET /tasks/open
+ * Get open tasks sorted by bounty (for Marketplace UI)
+ * MUST come before /:taskId to avoid route conflict
+ */
+router.get('/open', async (req, res) => {
+  try {
+    const taskList = await tasks.listTasks({
+      status: 'open',
+      limit: 100
+    });
+    
+    // Sort by bounty (highest first)
+    const sorted = taskList.sort((a, b) => {
+      const bountyA = parseFloat(a.bounty_hbar || 0);
+      const bountyB = parseFloat(b.bounty_hbar || 0);
+      return bountyB - bountyA;
+    });
+    
+    res.json({
+      success: true,
+      count: sorted.length,
+      tasks: sorted
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
+ * GET /tasks/stats
+ * Get task statistics (for Dashboard)
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const allTasks = await tasks.listTasks({ limit: 1000 });
+    
+    const stats = {
+      total: allTasks.length,
+      open: 0,
+      claimed: 0,
+      submitted: 0,
+      completed: 0,
+      cancelled: 0,
+      totalBountyHbar: 0,
+      paidBountyHbar: 0,
+      avgBountyHbar: 0
+    };
+    
+    for (const task of allTasks) {
+      const bounty = parseFloat(task.bounty_hbar || 0);
+      stats.totalBountyHbar += bounty;
+      
+      switch (task.status) {
+        case 'open': stats.open++; break;
+        case 'claimed': stats.claimed++; break;
+        case 'submitted': stats.submitted++; break;
+        case 'approved':
+        case 'completed': 
+          stats.completed++; 
+          if (task.bounty_paid) stats.paidBountyHbar += bounty;
+          break;
+        case 'cancelled': stats.cancelled++; break;
+      }
+    }
+    
+    stats.avgBountyHbar = stats.total > 0 ? stats.totalBountyHbar / stats.total : 0;
+    
+    res.json({
+      success: true,
+      stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * POST /tasks
  * Create a new task
  */
 router.post('/', async (req, res) => {
   const { creatorId, title, description, requiredCapabilities, bountyHbar, difficulty } = req.body;
-  
+
   if (!creatorId || !title) {
     return res.status(400).json({
       success: false,
       error: 'creatorId and title are required'
     });
   }
-  
+
   try {
     const task = await tasks.createTask(creatorId, {
       title,
       description,
       requiredCapabilities,
       bountyHbar,
-      difficulty: difficulty || 'medium' // easy, medium, hard, epic
+      difficulty: difficulty || 'medium'
     });
-    
+
     res.status(201).json({
       success: true,
       task
@@ -48,7 +126,7 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   const { status, capability, creator, claimant, limit } = req.query;
-  
+
   try {
     const taskList = await tasks.listTasks({
       status,
@@ -57,7 +135,7 @@ router.get('/', async (req, res) => {
       claimantId: claimant,
       limit: limit ? parseInt(limit) : 50
     });
-    
+
     res.json({
       success: true,
       count: taskList.length,
@@ -75,11 +153,11 @@ router.get('/', async (req, res) => {
 router.get('/:taskId', async (req, res) => {
   try {
     const task = await tasks.getTask(req.params.taskId);
-    
+
     if (!task) {
       return res.status(404).json({ success: false, error: 'Task not found' });
     }
-    
+
     res.json({ success: true, task });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -92,30 +170,13 @@ router.get('/:taskId', async (req, res) => {
  */
 router.post('/:taskId/claim', async (req, res) => {
   const { agentId } = req.body;
-  
+
   if (!agentId) {
     return res.status(400).json({ success: false, error: 'agentId is required' });
   }
-  
+
   try {
     const task = await tasks.claimTask(req.params.taskId, agentId);
-    
-    // Notify the task creator
-    try {
-      const notifications = require('./notifications');
-      if (notifications.addNotification && task.creator_id) {
-        notifications.addNotification(task.creator_id, {
-          event: 'task.claimed',
-          data: {
-            taskId: req.params.taskId,
-            taskTitle: task.title,
-            claimantId: agentId,
-            bounty: task.bounty_hbar
-          }
-        });
-      }
-    } catch (e) { console.log('Notification error:', e.message); }
-    
     res.json({ success: true, task });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
@@ -128,30 +189,13 @@ router.post('/:taskId/claim', async (req, res) => {
  */
 router.post('/:taskId/submit', async (req, res) => {
   const { agentId, submission } = req.body;
-  
+
   if (!agentId || !submission) {
     return res.status(400).json({ success: false, error: 'agentId and submission are required' });
   }
-  
+
   try {
     const task = await tasks.submitTask(req.params.taskId, agentId, submission);
-    
-    // Notify the task creator
-    try {
-      const notifications = require('./notifications');
-      if (notifications.addNotification && task.creator_id) {
-        notifications.addNotification(task.creator_id, {
-          event: 'task.submitted',
-          data: {
-            taskId: req.params.taskId,
-            taskTitle: task.title,
-            claimantId: agentId,
-            bounty: task.bounty_hbar
-          }
-        });
-      }
-    } catch (e) { console.log('Notification error:', e.message); }
-    
     res.json({ success: true, task });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
@@ -164,30 +208,13 @@ router.post('/:taskId/submit', async (req, res) => {
  */
 router.post('/:taskId/approve', async (req, res) => {
   const { agentId, result } = req.body;
-  
+
   if (!agentId) {
     return res.status(400).json({ success: false, error: 'agentId (creator) is required' });
   }
-  
+
   try {
     const task = await tasks.approveTask(req.params.taskId, agentId, result);
-    
-    // Notify the claimant
-    try {
-      const notifications = require('./notifications');
-      if (notifications.addNotification && task.claimant_id) {
-        notifications.addNotification(task.claimant_id, {
-          event: 'task.approved',
-          data: {
-            taskId: req.params.taskId,
-            taskTitle: task.title,
-            bounty: task.bounty_hbar,
-            payment: task.payment
-          }
-        });
-      }
-    } catch (e) { console.log('Notification error:', e.message); }
-    
     res.json({ success: true, task, message: 'Task approved! Reputation updated.' });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
@@ -200,29 +227,13 @@ router.post('/:taskId/approve', async (req, res) => {
  */
 router.post('/:taskId/reject', async (req, res) => {
   const { agentId, reason } = req.body;
-  
+
   if (!agentId) {
     return res.status(400).json({ success: false, error: 'agentId (creator) is required' });
   }
-  
+
   try {
     const task = await tasks.rejectTask(req.params.taskId, agentId, reason);
-    
-    // Notify the claimant
-    try {
-      const notifications = require('./notifications');
-      if (notifications.addNotification && task.claimant_id) {
-        notifications.addNotification(task.claimant_id, {
-          event: 'task.rejected',
-          data: {
-            taskId: req.params.taskId,
-            taskTitle: task.title,
-            reason: reason
-          }
-        });
-      }
-    } catch (e) { console.log('Notification error:', e.message); }
-    
     res.json({ success: true, task, message: 'Submission rejected. Claimant can resubmit.' });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
@@ -235,67 +246,14 @@ router.post('/:taskId/reject', async (req, res) => {
  */
 router.post('/:taskId/cancel', async (req, res) => {
   const { agentId } = req.body;
-  
+
   if (!agentId) {
     return res.status(400).json({ success: false, error: 'agentId (creator) is required' });
   }
-  
+
   try {
     const task = await tasks.cancelTask(req.params.taskId, agentId);
     res.json({ success: true, task, message: 'Task cancelled.' });
-  } catch (e) {
-    res.status(400).json({ success: false, error: e.message });
-  }
-});
-
-/**
- * GET /tasks/:taskId/comments
- * Get all comments for a task
- */
-router.get('/:taskId/comments', async (req, res) => {
-  try {
-    const comments = await tasks.getComments(req.params.taskId);
-    res.json({ success: true, comments });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-/**
- * POST /tasks/:taskId/comments
- * Add a comment to a task
- */
-router.post('/:taskId/comments', async (req, res) => {
-  const { agentId, content } = req.body;
-  
-  if (!agentId || !content) {
-    return res.status(400).json({ success: false, error: 'agentId and content are required' });
-  }
-  
-  try {
-    const comment = await tasks.addComment(req.params.taskId, agentId, content);
-    
-    // Send notification to the other party
-    try {
-      const task = await tasks.getTask(req.params.taskId);
-      const notifications = require('./notifications');
-      const recipientId = task.creator_id === agentId ? task.claimant_id : task.creator_id;
-      if (recipientId && notifications.addNotification) {
-        notifications.addNotification(recipientId, {
-          event: 'task.comment',
-          data: {
-            taskId: req.params.taskId,
-            taskTitle: task.title,
-            authorId: agentId,
-            preview: content.slice(0, 100)
-          }
-        });
-      }
-    } catch (e) {
-      console.log('Failed to send comment notification:', e.message);
-    }
-    
-    res.status(201).json({ success: true, comment });
   } catch (e) {
     res.status(400).json({ success: false, error: e.message });
   }

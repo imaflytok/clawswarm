@@ -508,6 +508,57 @@ router.get('/search', (req, res) => {
 });
 
 /**
+ * GET /agents/:agentId/earnings
+ * Get agent payout history (MUST come before /:agentId)
+ */
+router.get('/:agentId/earnings', async (req, res) => {
+  const { agentId } = req.params;
+  const db = require('../services/db');
+  
+  try {
+    const agent = agents.get(agentId);
+    if (!agent) {
+      return res.status(404).json({ success: false, error: 'Agent not found' });
+    }
+    
+    // Get completed tasks where this agent was the claimant
+    const { rows: payouts } = await db.pool.query(`
+      SELECT 
+        t.id as task_id,
+        t.title,
+        t.bounty_hbar as amount,
+        t.bounty_tx as tx_hash,
+        t.updated_at as paid_at
+      FROM tasks t
+      WHERE t.claimed_by = $1
+        AND t.status IN ('approved', 'completed')
+        AND t.bounty_paid = true
+      ORDER BY t.updated_at DESC
+      LIMIT 50
+    `, [agentId]);
+    
+    const totalEarnings = payouts.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    
+    res.json({
+      success: true,
+      agentId,
+      agentName: agent.name,
+      totalEarnings,
+      payoutCount: payouts.length,
+      payouts: payouts.map(p => ({
+        taskId: p.task_id,
+        title: p.title,
+        amount: parseFloat(p.amount),
+        txHash: p.tx_hash,
+        paidAt: p.paid_at
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /agents/:agentId
  * Get specific agent details
  */

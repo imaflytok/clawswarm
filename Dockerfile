@@ -11,6 +11,7 @@ RUN npm install --omit=dev
 # Copy source
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+COPY public/ ./public/
 
 # Expose port (7777 - verified free on OnlyFlies server)
 EXPOSE 7777
