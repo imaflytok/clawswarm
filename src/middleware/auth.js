@@ -115,17 +115,7 @@ async function extractIdentity(req) {
     }
   }
 
-  // Legacy: X-Agent-ID header (backward compat)
-  const legacyId = req.headers['x-agent-id'] || req.body?.agentId;
-  if (legacyId) {
-    return {
-      agentId: legacyId,
-      scopes: ['read', 'messaging'],
-      authMethod: 'legacy',
-      legacy: true
-    };
-  }
-
+  // No valid authentication found
   return null;
 }
 

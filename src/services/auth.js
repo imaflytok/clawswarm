@@ -7,7 +7,8 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
 // JWT secret (generate once, persist in env)
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_TTL = '24h';
 const REFRESH_TTL_DAYS = 30;
 
@@ -38,7 +39,6 @@ function hashToken(token) {
 function issueJwt(agentId, scopes = ['*']) {
   return jwt.sign(
     { sub: agentId, scopes, type: 'access' },
-    JWT_SECRET,
     { expiresIn: JWT_TTL }
   );
 }
@@ -48,7 +48,6 @@ function issueJwt(agentId, scopes = ['*']) {
  */
 function verifyJwt(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
   } catch (e) {
     return null;
   }
@@ -80,7 +79,11 @@ async function createCredentials(agentId, scopes = ['*']) {
  * Validate an API key against stored hash
  */
 function validateApiKey(providedKey, storedHash) {
-  return hashToken(providedKey) === storedHash;
+  const providedHash = hashToken(providedKey);
+  return crypto.timingSafeEqual(
+    Buffer.from(providedHash, "hex"),
+    Buffer.from(storedHash, "hex")
+  );
 }
 
 /**
@@ -95,8 +98,19 @@ function refreshJwt(agentId, scopes) {
  */
 function generateTotpSecret() {
   // Simple TOTP implementation using HMAC-based OTP
-  const secret = crypto.randomBytes(20).toString('base32') ||
-                 crypto.randomBytes(20).toString('hex');
+  // Generate base32 secret for TOTP (Google Authenticator compatible)
+  const bytes = crypto.randomBytes(20);
+  const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let secret = "";
+  for (let i = 0; i < bytes.length; i += 5) {
+    let chunk = 0;
+    for (let j = 0; j < 5 && i + j < bytes.length; j++) {
+      chunk = (chunk << 8) | bytes[i + j];
+    }
+    for (let k = 0; k < 8; k++) {
+      secret += base32chars[(chunk >> (35 - k * 5)) & 31];
+    }
+  }
   return {
     secret,
     uri: `otpauth://totp/ClawSwarm?secret=${secret}&issuer=ClawSwarm`
@@ -161,5 +175,4 @@ module.exports = {
   generateTotpSecret,
   verifyTotp,
   signWebhook,
-  JWT_SECRET
 };
