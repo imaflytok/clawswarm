@@ -15,6 +15,7 @@ const governance = require("../governance/routes");
 const authRoutes = require("./auth");
 const dmRoutes = require("./dm");
 const analytics = require("./analytics");
+const delegationRoutes = require("./delegation");
 const escrow = require("./escrow");
 
 const dashboard = require("./dashboard");
@@ -114,6 +115,7 @@ router.use("/dashboard", dashboard);
 router.use("/marketplace", marketplace);
 router.use("/auth", authRoutes);
 router.use("/dm", dmRoutes);
+router.use("/delegate", delegationRoutes);
 router.use("/leaderboard", leaderboard);
 router.use("/memory", memory);
 router.use("/services", services);

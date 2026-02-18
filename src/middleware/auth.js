@@ -1,7 +1,6 @@
 /**
  * ClawSwarm Auth Middleware
  * Validates JWT or API key on protected routes.
- * Read-only (GET) routes remain open for backward compatibility.
  */
 
 const auth = require('../services/auth');
@@ -11,24 +10,29 @@ const persistence = require('../services/db');
  * Require authentication — blocks unauthenticated requests
  */
 function requireAuth(req, res, next) {
-  const identity = extractIdentity(req);
-  if (!identity) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      hint: 'Include Authorization: Bearer <jwt> or X-API-Key: <key>'
-    });
-  }
-  req.agent = identity;
-  next();
+  extractIdentity(req).then(identity => {
+    if (!identity) {
+      return res.status(401).json({
+        error: 'Authentication required',
+        hint: 'Include Authorization: Bearer <jwt> or X-API-Key: <key>'
+      });
+    }
+    req.agent = identity;
+    next();
+  }).catch(e => {
+    console.error('Auth error:', e);
+    res.status(500).json({ error: 'Authentication error' });
+  });
 }
 
 /**
  * Optional auth — attaches identity if present, passes through if not
  */
 function optionalAuth(req, res, next) {
-  const identity = extractIdentity(req);
-  if (identity) req.agent = identity;
-  next();
+  extractIdentity(req).then(identity => {
+    if (identity) req.agent = identity;
+    next();
+  }).catch(() => next());
 }
 
 /**
@@ -58,22 +62,21 @@ function requireScope(...scopes) {
  */
 function require2FA(req, res, next) {
   const code = req.headers['x-2fa-code'] || req.body?._2fa;
-  if (!req.agent?.totpEnabled) return next(); // 2FA not set up, skip
+  if (!req.agent?.totpEnabled) return next();
   if (!code) {
     return res.status(403).json({
       error: '2FA code required',
       hint: 'Include X-2FA-Code header or _2fa body field'
     });
   }
-  // Verification happens in the route handler (needs agent's TOTP secret)
   req._2faCode = code;
   next();
 }
 
 /**
- * Extract agent identity from request
+ * Extract agent identity from request (async — does DB lookup for API keys)
  */
-function extractIdentity(req) {
+async function extractIdentity(req) {
   // Try JWT first (Authorization: Bearer xxx)
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
@@ -91,25 +94,33 @@ function extractIdentity(req) {
   // Try API key (X-API-Key: csk_xxx)
   const apiKey = req.headers['x-api-key'];
   if (apiKey?.startsWith('csk_')) {
-    // Look up agent by API key hash
     const hash = auth.hashToken(apiKey);
-    const agent = lookupByApiKeyHash(hash);
-    if (agent) {
-      return {
-        agentId: agent.id,
-        scopes: agent.scopes || ['*'],
-        totpEnabled: agent.totp_enabled,
-        authMethod: 'api_key'
-      };
+    try {
+      const result = await persistence.query(
+        'SELECT id, scopes, totp_enabled, roles FROM agents WHERE api_key_hash =  AND status = ',
+        [hash, 'active']
+      );
+      if (result?.rows?.length) {
+        const agent = result.rows[0];
+        return {
+          agentId: agent.id,
+          scopes: agent.scopes || ['*'],
+          roles: agent.roles || ['member'],
+          totpEnabled: agent.totp_enabled,
+          authMethod: 'api_key'
+        };
+      }
+    } catch (e) {
+      console.error('API key lookup error:', e.message);
     }
   }
 
-  // Legacy: X-Agent-ID header (backward compat, read-only operations)
+  // Legacy: X-Agent-ID header (backward compat)
   const legacyId = req.headers['x-agent-id'] || req.body?.agentId;
   if (legacyId) {
     return {
       agentId: legacyId,
-      scopes: ['read', 'messaging'],  // limited scopes for legacy auth
+      scopes: ['read', 'messaging'],
       authMethod: 'legacy',
       legacy: true
     };
@@ -118,31 +129,18 @@ function extractIdentity(req) {
   return null;
 }
 
-// Cache for API key lookups (refresh every 5 min)
-let apiKeyCache = new Map();
-let cacheExpiry = 0;
-
-function lookupByApiKeyHash(hash) {
-  // This will be replaced with actual DB lookup
-  // For now, return null (forces JWT auth)
-  return null;
-}
-
 /**
- * Audit log middleware — logs all authenticated actions
+ * Audit log middleware
  */
 function auditLog(action) {
   return (req, res, next) => {
     if (req.agent) {
-      const entry = {
+      logAudit({
         agentId: req.agent.agentId,
         action,
-        target: req.params.agentId || req.params.channelId || null,
-        ip: req.ip,
-        timestamp: new Date().toISOString()
-      };
-      // Fire and forget — don't block the request
-      logAudit(entry).catch(() => {});
+        target: req.params.agentId || req.params.targetAgentId || req.params.taskId || null,
+        ip: req.ip
+      }).catch(() => {});
     }
     next();
   };
@@ -155,7 +153,7 @@ async function logAudit(entry) {
       [entry.agentId, entry.action, entry.target, JSON.stringify({}), entry.ip]
     );
   } catch (e) {
-    console.error('Audit log error:', e.message);
+    // Silent fail — audit shouldn't block operations
   }
 }
 
