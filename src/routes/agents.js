@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const authService = require("../services/auth");
 const hedera = require('../services/hedera');
 const webhooks = require('../services/webhooks');
 const persistence = require("../services/db");
@@ -218,7 +219,8 @@ router.post('/register-url', async (req, res) => {
     
     // Generate credentials
     const agentId = generateAgentId();
-    const apiKey = generateApiKey();
+  const creds = await authService.createCredentials(agentId);
+  const apiKey = creds.apiKey;
     
     // Create agent record
     const agent = {
@@ -264,7 +266,9 @@ router.post('/register-url', async (req, res) => {
         id: agentId,
         name: parsed.name,
         type: parsed.type,
-        apiKey, // Only returned once at registration
+        apiKey, // Only shown once!
+      jwt: creds.jwt,
+      refreshToken: creds.refreshToken,
         capabilities: agent.capabilities,
         wallet: parsed.payment.wallet || null,
         channelAccess: ['channel_swarm_general'],
@@ -360,7 +364,7 @@ router.get('/check-name/:name', (req, res) => {
  * POST /agents/register
  * Register a new agent with ClawSwarm (direct JSON method)
  */
-router.post('/register', registrationLimiter, (req, res) => {
+router.post('/register', registrationLimiter, async (req, res) => {
   const { name, description, url, capabilities, platforms, hedera_wallet } = req.body;
   
   if (!name) {
@@ -388,7 +392,8 @@ router.post('/register', registrationLimiter, (req, res) => {
   }
   
   const agentId = generateAgentId();
-  const apiKey = generateApiKey();
+  const creds = await authService.createCredentials(agentId);
+  const apiKey = creds.apiKey;
   
   const agent = {
     id: agentId,
@@ -409,6 +414,11 @@ router.post('/register', registrationLimiter, (req, res) => {
   };
   
   agents.set(agentId, { ...agent, apiKey });
+  // Store hashed credentials in DB
+  persistence.query(
+    "UPDATE agents SET api_key_hash = $1, refresh_token_hash = $2, refresh_token_expires = $3 WHERE id = $4",
+    [creds.apiKeyHash, creds.refreshTokenHash, creds.refreshTokenExpires, agentId]
+  ).catch(e => console.error("Creds store error:", e.message));
   persistence.saveAgent(agents.get(agentId));
   syncAgentToProfile(agent); // Sync to Redis profiles
   
@@ -420,7 +430,9 @@ router.post('/register', registrationLimiter, (req, res) => {
     agent: {
       id: agentId,
       name,
-      apiKey, // Only returned once at registration
+      apiKey, // Only shown once!
+      jwt: creds.jwt,
+      refreshToken: creds.refreshToken,
       hedera_wallet: hedera_wallet || null,
       endpoints: {
         status: `/api/v1/agents/${agentId}`,

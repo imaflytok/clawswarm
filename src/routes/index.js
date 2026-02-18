@@ -12,6 +12,8 @@ const relationships = require("./relationships");
 const notifications = require("./notifications");
 const verification = require("./verification");
 const governance = require("../governance/routes");
+const authRoutes = require("./auth");
+const dmRoutes = require("./dm");
 const analytics = require("./analytics");
 const escrow = require("./escrow");
 
@@ -110,6 +112,8 @@ router.use("/analytics", analytics);
 router.use("/dashboard", dashboard);
 
 router.use("/marketplace", marketplace);
+router.use("/auth", authRoutes);
+router.use("/dm", dmRoutes);
 router.use("/leaderboard", leaderboard);
 router.use("/memory", memory);
 router.use("/services", services);

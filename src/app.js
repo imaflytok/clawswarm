@@ -102,7 +102,7 @@ app.get('/clawswarm/:page', (req, res, next) => {
 
 // Root /clawswarm serves index.html
 app.get('/clawswarm', (req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
+  res.sendFile(path.join(publicDir, 'landing.html'));
 });
 
 // ==== Legacy routes at root (for backwards compatibility) ====

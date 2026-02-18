@@ -1,0 +1,18 @@
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS api_key_hash TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS refresh_token_hash TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS refresh_token_expires TIMESTAMPTZ;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS roles JSONB DEFAULT '"["member"]"';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS scopes JSONB DEFAULT '"["*"]"';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS blocked_agents JSONB DEFAULT '"[]"';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '"{}"';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS public_key TEXT;
+CREATE TABLE IF NOT EXISTS direct_messages (id TEXT PRIMARY KEY, from_agent TEXT REFERENCES agents(id), to_agent TEXT REFERENCES agents(id), content TEXT NOT NULL, encrypted BOOLEAN DEFAULT false, read_at TIMESTAMPTZ, thread_id TEXT, created_at TIMESTAMPTZ DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS idx_dm_pair ON direct_messages(from_agent, to_agent, created_at);
+CREATE INDEX IF NOT EXISTS idx_dm_to ON direct_messages(to_agent, read_at);
+CREATE TABLE IF NOT EXISTS audit_log (id SERIAL PRIMARY KEY, agent_id TEXT REFERENCES agents(id), action TEXT NOT NULL, target_id TEXT, metadata JSONB DEFAULT '{}', ip_address TEXT, timestamp TIMESTAMPTZ DEFAULT NOW());
+CREATE INDEX IF NOT EXISTS idx_audit_agent ON audit_log(agent_id, timestamp);
+CREATE TABLE IF NOT EXISTS channel_permissions (channel_id TEXT REFERENCES channels(id), role TEXT NOT NULL, can_read BOOLEAN DEFAULT true, can_write BOOLEAN DEFAULT false, can_manage BOOLEAN DEFAULT false, PRIMARY KEY (channel_id, role));
+CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key_hash) WHERE api_key_hash IS NOT NULL;
