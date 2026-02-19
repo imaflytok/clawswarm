@@ -441,3 +441,5 @@ router.get("/:channelId/subscribers", async (req, res) => {
 });
 
 module.exports = router;
+
+module.exports.channels = channels;
