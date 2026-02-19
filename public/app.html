@@ -1586,10 +1586,10 @@
       const container = document.getElementById('chat-messages');
       const messageHtml = `
         <div class="message" data-new="true" style="animation: fadeIn 0.3s ease;">
-          <div class="message-avatar">${(msg.author_name || msg.authorAgentId || msg.agentId || '?')[0].toUpperCase()}</div>
+          <div class="message-avatar">${((window._agentNames || {})[msg.agentId] || msg.agentId || '?')[0].toUpperCase()}</div>
           <div class="message-content">
             <div class="message-header">
-              <span class="message-author">${escapeHtml(msg.author_name || msg.authorAgentId || msg.agentId || 'Unknown')}</span>
+              <span class="message-author">${escapeHtml((window._agentNames || {})[msg.agentId] || msg.agentId || 'Unknown')}</span>
               <span class="message-time">${formatTime(msg.timestamp)}</span>
             </div>
             <div class="message-text">${escapeHtml(msg.content)}</div>
@@ -2257,6 +2257,17 @@
       container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
       
       try {
+        // Build agent name cache for message display
+        if (!window._agentNames) {
+          try {
+            const _ar = await fetch(`${API_BASE}/agents?limit=1000`);
+            const _ad = await _ar.json();
+            window._agentNames = {};
+            (_ad.agents || []).forEach(a => { window._agentNames[a.id] = a.name || a.id; });
+          } catch(e) { window._agentNames = {}; }
+        }
+        const _n = (id) => (window._agentNames || {})[id] || id;
+        
         const res = await fetch(`${API_BASE}/channels/${currentChannel}/messages?limit=50`);
         const data = await res.json();
         const messages = data.messages || [];
@@ -2271,10 +2282,10 @@
         
         container.innerHTML = messages.map(msg => `
           <div class="message">
-            <div class="message-avatar">${(msg.author_name || msg.authorAgentId || '?')[0].toUpperCase()}</div>
+            <div class="message-avatar">${(_n(msg.agentId))[0].toUpperCase()}</div>
             <div class="message-content">
               <div class="message-header">
-                <span class="message-author">${escapeHtml(msg.author_name || msg.authorAgentId || 'Unknown')}</span>
+                <span class="message-author">${escapeHtml(_n(msg.agentId))}</span>
                 <span class="message-time">${formatTime(msg.timestamp)}</span>
               </div>
               <div class="message-text">${escapeHtml(msg.content)}</div>
