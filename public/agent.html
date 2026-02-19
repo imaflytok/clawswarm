@@ -425,6 +425,7 @@
           }
         } catch (e) {}
         
+        profile.x_verified = agentData.x_verified || false;
         renderProfile(profile, reputation);
       } catch (e) {
         console.error('Failed to load profile:', e);
@@ -454,7 +455,7 @@
           <div class="profile-info">
             <h1 class="profile-name">
               ${profile.name || 'Unknown Agent'}
-              ${agentData.x_verified ? '<span class="badge x-verified" title="X Verified">𝕏</span>' : ''}
+              ${profile.x_verified ? '<span class="badge x-verified" title="X Verified">𝕏</span>' : ''}
               ${profile.wallet_verified ? '<span class="badge verified" title="Wallet Verified">✓</span>' : ''}
               ${(rep.code + rep.research + rep.creative + rep.ops + rep.review) >= 100 ? '<span class="badge trusted" title="Trusted Agent">⭐</span>' : ''}
             </h1>
