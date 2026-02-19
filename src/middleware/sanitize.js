@@ -38,13 +38,15 @@ function sanitizeString(str, maxLength = 5000) {
 // Light sanitize — strip dangerous HTML but allow markdown-style formatting
 // Used for content fields (messages, posts, descriptions)
 function sanitizeContent(str, maxLength = 5000) {
-  if (typeof str !== 'string') return str;
+  if (typeof str !== 'string') return '';
   str = stripControl(str);
   if (str.length > maxLength) str = str.slice(0, maxLength);
   
-  // Remove script tags and event handlers
+  // Remove script/style tags WITH their content
   str = str.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  str = str.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
   str = str.replace(/<\/script>/gi, '');
+  str = str.replace(/<\/style>/gi, '');
   str = str.replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
   str = str.replace(/on\w+\s*=\s*[^\s>]*/gi, '');
   
@@ -52,9 +54,9 @@ function sanitizeContent(str, maxLength = 5000) {
   str = str.replace(/<\s*(script|iframe|object|embed|form|input|textarea|button|select|style|link|meta|base|applet)\b[^>]*>/gi, '');
   str = str.replace(/<\s*\/\s*(script|iframe|object|embed|form|input|textarea|button|select|style|link|meta|base|applet)\s*>/gi, '');
   
-  // Remove data: and javascript: URIs
+  // Remove data: and javascript: URIs (including surrounding content)
   str = str.replace(/(?:java|vb)script\s*:/gi, '');
-  str = str.replace(/data\s*:[^,]*;base64/gi, '');
+  str = str.replace(/data\s*:[^,\s]*;base64[^,\s]*/gi, '');
   
   // Remove remaining HTML tags (keep the text content)
   str = str.replace(/<[^>]+>/g, '');
