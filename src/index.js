@@ -39,7 +39,7 @@ async function main() {
   // Initialize SwarmIRC WebSocket gateway
   try {
     const agents = require('./routes/agents').agents || new Map();
-    const streams = require('./services/streams');
+    const streams = require('./services/redis-streams');
     const channels = require('./routes/channels').channels || new Map();
     const { sanitizeContent } = require('./middleware/sanitize');
     
