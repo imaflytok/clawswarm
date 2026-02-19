@@ -415,10 +415,6 @@ router.post('/register', registrationLimiter, async (req, res) => {
   
   agents.set(agentId, { ...agent, apiKey });
   // Store hashed credentials in DB
-  persistence.query(
-    "UPDATE agents SET api_key_hash = $1, refresh_token_hash = $2, refresh_token_expires = $3 WHERE id = $4",
-    [creds.apiKeyHash, creds.refreshTokenHash, creds.refreshTokenExpires, agentId]
-  ).catch(e => console.error("Creds store error:", e.message));
   persistence.saveAgent(agents.get(agentId));
   syncAgentToProfile(agent); // Sync to Redis profiles
   
