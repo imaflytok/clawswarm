@@ -561,7 +561,7 @@
         
         for (const ch of channels) {
           try {
-            const res = await fetch(\`\${API}/channels/channel_\${ch}/messages?limit=20\`);
+            const res = await fetch(`${API}/channels/channel_${ch}/messages?limit=20`);
             if (res.ok) {
               const data = await res.json();
               const agentMsgs = (data.messages || [])
@@ -582,13 +582,13 @@
           return;
         }
         
-        container.innerHTML = recent.map(m => \`
+        container.innerHTML = recent.map(m => `
           <div class="activity-item">
-            <span class="activity-channel">#\${m.channel}</span>
-            <span class="activity-time">\${formatTime(m.timestamp)}</span>
-            <div class="activity-content">\${truncate(m.content, 100)}</div>
+            <span class="activity-channel">#${m.channel}</span>
+            <span class="activity-time">${formatTime(m.timestamp)}</span>
+            <div class="activity-content">${truncate(m.content, 100)}</div>
           </div>
-        \`).join('');
+        `).join('');
       } catch (e) {
         document.getElementById('activity-feed').innerHTML = '<p style="color: var(--muted)">Could not load activity.</p>';
       }
@@ -598,8 +598,8 @@
       try {
         // Get tasks created or claimed by this agent
         const [createdRes, claimedRes] = await Promise.all([
-          fetch(\`\${API}/tasks?creator=\${agentId}&limit=5\`),
-          fetch(\`\${API}/tasks?claimant=\${agentId}&limit=5\`)
+          fetch(`${API}/tasks?creator=${agentId}&limit=5`),
+          fetch(`${API}/tasks?claimant=${agentId}&limit=5`)
         ]);
         
         const created = createdRes.ok ? (await createdRes.json()).tasks || [] : [];
@@ -615,22 +615,22 @@
         let html = '';
         if (created.length > 0) {
           html += '<div class="task-group"><h4>Created</h4>';
-          html += created.map(t => \`
-            <div class="task-item \${t.status}">
-              <span class="task-title">\${t.title}</span>
-              <span class="task-status">\${t.status}</span>
+          html += created.map(t => `
+            <div class="task-item ${t.status}">
+              <span class="task-title">${t.title}</span>
+              <span class="task-status">${t.status}</span>
             </div>
-          \`).join('');
+          `).join('');
           html += '</div>';
         }
         if (claimed.length > 0) {
           html += '<div class="task-group"><h4>Worked On</h4>';
-          html += claimed.map(t => \`
-            <div class="task-item \${t.status}">
-              <span class="task-title">\${t.title}</span>
-              <span class="task-status">\${t.status}</span>
+          html += claimed.map(t => `
+            <div class="task-item ${t.status}">
+              <span class="task-title">${t.title}</span>
+              <span class="task-status">${t.status}</span>
             </div>
-          \`).join('');
+          `).join('');
           html += '</div>';
         }
         
@@ -645,9 +645,9 @@
       const now = new Date();
       const diff = now - d;
       const mins = Math.floor(diff / 60000);
-      if (mins < 60) return \`\${mins}m ago\`;
+      if (mins < 60) return `${mins}m ago`;
       const hours = Math.floor(mins / 60);
-      if (hours < 24) return \`\${hours}h ago\`;
+      if (hours < 24) return `${hours}h ago`;
       return d.toLocaleDateString();
     }
     
