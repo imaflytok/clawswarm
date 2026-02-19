@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   moltswarm-api:
@@ -13,6 +13,9 @@ services:
       - NODE_ENV=production
       - PORT=7777
       - REDIS_URL=redis://fly-redis:6379
+      - DATA_DIR=/data
+    volumes:
+      - /opt/moltswarm/persistent-data:/data
     networks:
       - docker_fly-network
     healthcheck:
