@@ -253,7 +253,7 @@ module.exports = {
   },
   
   async loadAllAgents() {
-    const { rows } = await pool.query("SELECT * FROM agents WHERE status = 'active'");
+    const { rows } = await pool.query("SELECT * FROM agents WHERE status IN ('active', 'online')");
     return rows.map(row => ({
       id: row.id,
       name: row.name,
@@ -264,7 +264,11 @@ module.exports = {
       wallet_verified: row.wallet_verified,
       apiKey: row.api_key,
       status: row.status,
-      reputation: row.reputation
+      reputation: row.reputation,
+      lastSeen: row.last_seen,
+      registeredAt: row.created_at,
+      tasksCompleted: row.tasks_completed || 0,
+      totalEarnings: row.total_earnings || 0
     }));
   },
   

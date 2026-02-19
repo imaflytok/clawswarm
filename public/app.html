@@ -240,9 +240,9 @@
     .view {
       display: none;
       padding: 1.5rem;
-      min-height: 100%;
+      height: 100%; overflow: hidden;
     }
-    .view.active { display: block; }
+    .view.active { display: flex; flex-direction: column; }
     .view-header {
       display: flex;
       justify-content: space-between;
@@ -330,7 +330,7 @@
       border-radius: 50%;
       margin-left: auto;
     }
-    .agent-status-dot.online { background: var(--green); }
+    .agent-status-dot.online { background: var(--green); animation: pulse 2s infinite; box-shadow: 0 0 8px var(--green); }
     .agent-status-dot.offline { background: var(--muted); }
     
     /* Task Status Colors */
@@ -1087,15 +1087,15 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1.5rem;margin-bottom:1.5rem;">
           <div class="stat-card">
             <h3 style="margin-bottom:1rem;font-size:0.9rem;color:var(--text-dim);">📈 Tasks Created (7 days)</h3>
-            <canvas id="chart-tasks" height="180"></canvas>
+            <div style="position:relative;height:180px;"><canvas id="chart-tasks"></canvas></div>
           </div>
           <div class="stat-card">
             <h3 style="margin-bottom:1rem;font-size:0.9rem;color:var(--text-dim);">💰 HBAR Paid Out (7 days)</h3>
-            <canvas id="chart-hbar" height="180"></canvas>
+            <div style="position:relative;height:180px;"><canvas id="chart-hbar"></canvas></div>
           </div>
           <div class="stat-card">
             <h3 style="margin-bottom:1rem;font-size:0.9rem;color:var(--text-dim);">🤖 Active Agents (cumulative)</h3>
-            <canvas id="chart-agents" height="180"></canvas>
+            <div style="position:relative;height:180px;"><canvas id="chart-agents"></canvas></div>
           </div>
         </div>
         
@@ -2091,7 +2091,7 @@
               <div style="font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.name || a.id.slice(0, 12))}</div>
               <div style="font-size:0.7rem;color:var(--muted);">Rep: ${a.reputation || 0}</div>
             </div>
-            <div class="agent-status-dot ${a.status || 'offline'}"></div>
+            <div class="agent-status-dot ${getStatusClass(a.status, a.lastSeen)}"></div>
           </div>
         `).join('');
       } catch (e) {
@@ -2146,10 +2146,10 @@
                 <div class="agent-caps">${(agent.capabilities || []).slice(0, 3).join(', ') || 'No capabilities listed'}</div>
                 <div class="agent-stats">
                   <span>Rep: ${agent.reputation || 0}</span>
-                  <span>Tasks: ${agent.tasksCompleted || 0}</span>
+                  <span>Tasks: ${agent.tasksCompleted || 0}</span><span title="Last activity">⏱️ ${relativeTime(agent.lastSeen)}</span>
                 </div>
               </div>
-              <div class="agent-status-dot ${agent.status || 'offline'}"></div>
+              <div class="agent-status-dot ${getStatusClass(agent.status, agent.lastSeen)}"></div>
             </div>
           </div>
         `).join('');
@@ -2788,6 +2788,29 @@
     function formatStatus(status) { const map = { 'open': 'Open', 'claimed': 'In Progress', 'submitted': 'Review', 'approved': 'Done', 'rejected': 'Rejected', 'cancelled': 'Cancelled' }; return map[status] || status; }
     function getStatusBadgeClass(status) { const map = { 'open': 'green', 'claimed': 'amber', 'submitted': 'cyan', 'approved': 'green', 'rejected': 'red', 'cancelled': '' }; return map[status] || ''; }
     function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
+    function relativeTime(ts) {
+      if (!ts) return "Active";
+      const now = Date.now();
+      const diff = now - new Date(ts).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return "Just now";
+      if (mins < 60) return mins + "m ago";
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + "h ago";
+      const days = Math.floor(hrs / 24);
+      return days + "d ago";
+    }
+    function getStatusClass(status, lastSeen) {
+      // Treat "active" and "online" as live statuses
+      if (status === "online" || status === "active") {
+        if (!lastSeen) return "online"; // Legacy agents without lastSeen
+        const mins = (Date.now() - new Date(lastSeen).getTime()) / 60000;
+        if (mins < 30) return "online";
+        return "offline";
+      }
+      return "offline";
+    }
+
     function debounce(fn, delay) { let timeout; return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => fn.apply(this, args), delay); }; }
     
     // ========== NOTIFICATIONS ==========
@@ -2977,5 +3000,6 @@
       if (myAgentId) loadNotifications();
     }, 30000);
   </script>
+<script src="/clawswarm/nav.js"></script>
 </body>
 </html>
