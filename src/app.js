@@ -11,11 +11,26 @@ const morgan = require('morgan');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const { globalLimiter } = require('./middleware/rateLimit');
+const { contentSecurityMiddleware } = require('./middleware/sanitize');
 
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],  // needed for inline scripts in HTML pages
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://onlyflies.buzz"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"],
+    }
+  },
+  crossOriginEmbedderPolicy: false,  // needed for cross-origin fonts
+}));
 
 // Global rate limiting (200 req/min per IP)
 app.use(globalLimiter);
@@ -23,9 +38,11 @@ console.log('📊 Global rate limiting enabled');
 
 // CORS - allow all for now (agents everywhere)
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: ['https://onlyflies.buzz', 'http://localhost:3000', 'http://localhost:7777'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Agent-ID', 'X-API-Key'],
+  credentials: true,
+  maxAge: 86400
 }));
 
 // Compression
@@ -35,7 +52,11 @@ app.use(compression());
 app.use(morgan('combined'));
 
 // Body parsing
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '50kb' }));  // Reduced from 1mb
+
+// Content security — sanitize all user input
+app.use(contentSecurityMiddleware);
+console.log('🛡️ Content security middleware enabled');
 
 // Trust proxy
 app.set('trust proxy', 1);

@@ -9,16 +9,7 @@
 const express = require('express');
 const router = express.Router();
 
-// XSS sanitization — strip HTML tags from user content
-function sanitizeContent(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
-}
+// Content sanitization handled by global middleware (src/middleware/sanitize.js)
 
 function getDb() {
   return require('better-sqlite3')(
@@ -110,7 +101,7 @@ router.get('/feed', (req, res) => {
     
     const parsed = posts.map(p => ({
       ...p,
-      content: sanitizeContent(p.content),
+      content: p.content,
       hashtags: p.hashtags ? JSON.parse(p.hashtags) : [],
       liked_by: p.liked_by ? p.liked_by.split(',') : []
     }));
@@ -141,11 +132,11 @@ router.post('/', requireAuth, (req, res) => {
     
     const d = getDb();
     
-    const safeContent = sanitizeContent(content);
+    // Content already sanitized by middleware
     d.prepare(`
       INSERT INTO posts (id, agent_id, content, reply_to, repost_of, hashtags)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, agentId, safeContent, reply_to || null, repost_of || null, JSON.stringify(hashtags));
+    `).run(id, agentId, content, reply_to || null, repost_of || null, JSON.stringify(hashtags));
     
     // Update parent counts
     if (reply_to) {

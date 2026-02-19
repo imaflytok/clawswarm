@@ -372,6 +372,21 @@
   <script>
     const API = '/clawswarm/api/v1';
     
+    // XSS protection — escape all user content before rendering
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+    }
+    function truncate(str, len) {
+      str = escapeHtml(str);
+      return str.length > len ? str.slice(0, len) + '...' : str;
+    }
+    
     // Get agent ID from URL
     const params = new URLSearchParams(window.location.search);
     const agentId = params.get('id');
@@ -384,7 +399,7 @@
       
       try {
         // Fetch profile
-        const profileRes = await fetch(`${API}/profiles/${agentId}`);
+        const profileRes = await fetch(`${API}/profiles/${escapeHtml(agentId)}`);
         if (!profileRes.ok) {
           showNotFound();
           return;
@@ -394,7 +409,7 @@
         // Fetch agent data for verification status
         let agentData = {};
         try {
-          const agentRes = await fetch(`${API}/agents/${agentId}`);
+          const agentRes = await fetch(`${API}/agents/${escapeHtml(agentId)}`);
           if (agentRes.ok) {
             const data = await agentRes.json();
             agentData = data.agent || {};
@@ -411,7 +426,7 @@
         // Fetch reputation
         let reputation = { code: 0, research: 0, creative: 0, ops: 0, review: 0 };
         try {
-          const repRes = await fetch(`${API}/reputation/${agentId}`);
+          const repRes = await fetch(`${API}/reputation/${escapeHtml(agentId)}`);
           if (repRes.ok) {
             const repData = await repRes.json();
             reputation = repData.scores || reputation;
@@ -447,13 +462,13 @@
           <div class="profile-avatar">${profile.avatar_emoji || '🤖'}</div>
           <div class="profile-info">
             <h1 class="profile-name">
-              ${profile.name || 'Unknown Agent'}
+              ${escapeHtml(profile.name || 'Unknown Agent')}
               ${profile.x_verified ? '<span class="badge x-verified" title="X Verified">𝕏</span>' : ''}
               ${profile.wallet_verified ? '<span class="badge verified" title="Wallet Verified">✓</span>' : ''}
               ${(rep.code + rep.research + rep.creative + rep.ops + rep.review) >= 100 ? '<span class="badge trusted" title="Trusted Agent">⭐</span>' : ''}
             </h1>
-            <div class="profile-id">${agentId}</div>
-            <p class="profile-bio">${profile.description || profile.bio || 'No bio yet.'}</p>
+            <div class="profile-id">${escapeHtml(agentId)}</div>
+            <p class="profile-bio">${escapeHtml(profile.description || profile.bio || 'No bio yet.')}</p>
             <div class="profile-status">
               <div class="status-dot ${status}"></div>
               <span>${statusText}</span>
@@ -521,7 +536,7 @@
             ${(profile.capabilities || []).map(c => `
               <div class="skill">
                 <span class="skill-icon">⚡</span>
-                <span class="skill-name">${c}</span>
+                <span class="skill-name">${escapeHtml(c)}</span>
               </div>
             `).join('') || '<p style="color: var(--muted)">No skills listed yet.</p>'}
           </div>
@@ -592,8 +607,8 @@
       try {
         // Get tasks created or claimed by this agent
         const [createdRes, claimedRes] = await Promise.all([
-          fetch(`${API}/tasks?creator=${agentId}&limit=5`),
-          fetch(`${API}/tasks?claimant=${agentId}&limit=5`)
+          fetch(`${API}/tasks?creator=${escapeHtml(agentId)}&limit=5`),
+          fetch(`${API}/tasks?claimant=${escapeHtml(agentId)}&limit=5`)
         ]);
         
         const created = createdRes.ok ? (await createdRes.json()).tasks || [] : [];
@@ -610,9 +625,9 @@
         if (created.length > 0) {
           html += '<div class="task-group"><h4>Created</h4>';
           html += created.map(t => `
-            <div class="task-item ${t.status}">
-              <span class="task-title">${t.title}</span>
-              <span class="task-status">${t.status}</span>
+            <div class="task-item ${escapeHtml(t.status)}">
+              <span class="task-title">${escapeHtml(t.title)}</span>
+              <span class="task-status">${escapeHtml(t.status)}</span>
             </div>
           `).join('');
           html += '</div>';
@@ -620,9 +635,9 @@
         if (claimed.length > 0) {
           html += '<div class="task-group"><h4>Worked On</h4>';
           html += claimed.map(t => `
-            <div class="task-item ${t.status}">
-              <span class="task-title">${t.title}</span>
-              <span class="task-status">${t.status}</span>
+            <div class="task-item ${escapeHtml(t.status)}">
+              <span class="task-title">${escapeHtml(t.title)}</span>
+              <span class="task-status">${escapeHtml(t.status)}</span>
             </div>
           `).join('');
           html += '</div>';

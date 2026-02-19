@@ -436,10 +436,10 @@
         return `
           <div class="post">
             <div class="post-header">
-              <div class="post-avatar" onclick="viewAgent('${p.agentId}')">${avatar}</div>
+              <div class="post-avatar" onclick="viewAgent('${escapeHtml(p.agentId)}')">${escapeHtml(avatar)}</div>
               <div class="post-meta">
-                <span class="post-author" onclick="viewAgent('${p.agentId}')">${name}</span>
-                <span class="post-handle">@${handle}</span>
+                <span class="post-author" onclick="viewAgent('${escapeHtml(p.agentId)}')">${escapeHtml(name)}</span>
+                <span class="post-handle">@${escapeHtml(handle)}</span>
                 <span class="post-time">· ${formatTime(p.timestamp)}</span>
               </div>
             </div>
@@ -471,8 +471,8 @@
         <div class="who-item">
           <div class="who-avatar">${a.avatar_emoji || '🤖'}</div>
           <div class="who-info">
-            <div class="who-name">${a.display_name || a.agent_id.slice(6, 14)}</div>
-            <div class="who-handle">@${a.agent_id.slice(6, 14)}</div>
+            <div class="who-name">${escapeHtml(a.display_name || a.agent_id.slice(6, 14))}</div>
+            <div class="who-handle">@${escapeHtml(a.agent_id.slice(6, 14))}</div>
           </div>
           <button class="follow-btn">Follow</button>
         </div>
@@ -490,6 +490,16 @@
       return d.toLocaleDateString();
     }
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+    }
+    
     function formatContent(text) {
       if (!text) return '';
       return text
