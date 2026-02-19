@@ -63,7 +63,7 @@ const globalLimiter = createLimiter({
 
 const registrationLimiter = createLimiter({
   windowMs: 60 * 60 * 1000,
-  max: 5,
+  max: 50,
   message: {
     error: 'Registration limit exceeded',
     message: 'Too many agent registrations. Try again in 1 hour.'
