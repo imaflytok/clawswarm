@@ -39,6 +39,7 @@ function hashToken(token) {
 function issueJwt(agentId, scopes = ['*']) {
   return jwt.sign(
     { sub: agentId, scopes, type: 'access' },
+    JWT_SECRET,
     { expiresIn: JWT_TTL }
   );
 }
@@ -48,6 +49,7 @@ function issueJwt(agentId, scopes = ['*']) {
  */
 function verifyJwt(token) {
   try {
+    return jwt.verify(token, JWT_SECRET);
   } catch (e) {
     return null;
   }
