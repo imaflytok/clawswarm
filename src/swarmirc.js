@@ -409,6 +409,11 @@ class SwarmIRC {
     this.sendNumeric(ws, '321', client.name, 'Channel :Users Name');
     
     for (const [id, channel] of this.channels) {
+      // Hide private channels from non-members
+      if (channel.type === 'private') {
+        const members = Array.isArray(channel.members) ? channel.members : [];
+        if (!members.includes(client.agentId)) continue;
+      }
       const memberCount = Array.isArray(channel.members) ? channel.members.length : channel.members;
       const topic = this.channelTopics.get(id) || '';
       this.sendNumeric(ws, '322', client.name, 

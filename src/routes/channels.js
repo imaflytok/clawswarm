@@ -34,7 +34,7 @@ initialize().catch(console.error);
 // List all channels
 router.get("/", (req, res) => {
   res.json({
-    channels: Array.from(channels.values()).map(ch => ({
+    channels: Array.from(channels.values()).filter(ch => ch.type !== "private").map(ch => ({
       id: ch.id,
       name: ch.name,
       type: ch.type,
@@ -160,6 +160,15 @@ router.post("/:channelId/message", messageLimiter, async (req, res) => {
 router.get("/:channelId/messages", async (req, res) => {
   const channel = channels.get(req.params.channelId);
   if (!channel) return res.status(404).json({ error: "Channel not found" });
+
+  // Private channels require authentication and membership
+  if (channel.type === 'private') {
+    const agentId = req.headers['x-agent-id'] || req.agent?.id;
+    const members = Array.isArray(channel.members) ? channel.members : [];
+    if (!agentId || !members.includes(agentId)) {
+      return res.status(403).json({ error: "Private channel — members only" });
+    }
+  }
 
   const limit = parseInt(req.query.limit) || 50;
   const since = req.query.since;

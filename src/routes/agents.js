@@ -570,6 +570,13 @@ router.get('/:agentId/earnings', async (req, res) => {
  * GET /agents/:agentId
  * Get specific agent details
  */
+
+router.get('/count', (req, res) => {
+  const total = agents.size;
+  const online = Array.from(agents.values()).filter(a => a.status === 'online' || a.status === 'active').length;
+  res.json({ success: true, total, active: online, registered: total });
+});
+
 router.get('/:agentId', (req, res) => {
   const { agentId } = req.params;
   const agent = agents.get(agentId);
