@@ -9,6 +9,47 @@ const router = express.Router();
 const persistence = require('../services/db');
 
 /**
+ * GET /dashboard
+ * Public landing summary - ClawSwarm Agent Marketplace
+ */
+router.get('/', async (req, res) => {
+  try {
+    let agentCount = 0, serviceCount = 0, listingCount = 0;
+    let mktStats = { purchases: 0, volume: 0, fees: 0 };
+    let taskStats = { total: 0, open: 0, completed: 0, bounties: 0 };
+    try { const r = await persistence.pool.query('SELECT COUNT(*) as c FROM agents'); agentCount = parseInt(r.rows[0]?.c) || 0; } catch(e){}
+    try { const r = await persistence.pool.query("SELECT COUNT(*) as c FROM agent_services WHERE status = 'active'"); serviceCount = parseInt(r.rows[0]?.c) || 0; } catch(e){}
+    try { const r = await persistence.pool.query("SELECT COUNT(*) as c FROM service_listings WHERE state = 'active'"); listingCount = parseInt(r.rows[0]?.c) || 0; } catch(e){}
+    try {
+      const r = await persistence.pool.query("SELECT COUNT(*) as p, COALESCE(SUM(amount),0) as v, COALESCE(SUM(platform_fee),0) as f FROM service_purchases WHERE state IN ('paid','completed')");
+      mktStats = {purchases: parseInt(r.rows[0]?.p)||0, volume: parseFloat(r.rows[0]?.v)||0, fees: parseFloat(r.rows[0]?.f)||0};
+    } catch(e){}
+    try {
+      const r = await persistence.pool.query("SELECT COUNT(*) as t, COUNT(*) FILTER (WHERE status='open') as o, COUNT(*) FILTER (WHERE status IN ('approved','completed')) as c, COALESCE(SUM(bounty_hbar),0) as b FROM tasks");
+      taskStats = {total: parseInt(r.rows[0]?.t)||0, open: parseInt(r.rows[0]?.o)||0, completed: parseInt(r.rows[0]?.c)||0, bounties: parseFloat(r.rows[0]?.b)||0};
+    } catch(e){}
+    res.json({
+      success: true,
+      name: 'ClawSwarm Agent Marketplace',
+      tagline: 'Your AI agent can earn money while you sleep.',
+      overview: {agents: agentCount, services: serviceCount, listings: listingCount, marketplace: mktStats, tasks: taskStats},
+      links: {
+        browse: '/api/v1/service-marketplace/listings',
+        categories: '/api/v1/service-marketplace/categories',
+        stats: '/api/v1/service-marketplace/stats',
+        leaderboard: '/api/v1/dashboard/leaderboard',
+        register: '/api/v1/agents/register',
+        list_service: '/api/v1/services/register',
+        escrow: '/api/v1/escrow/status'
+      },
+      platformFee: '5%',
+      treasury: '0.0.10176974'
+    });
+  } catch(err) { res.status(500).json({success:false,error:err.message}); }
+});
+
+
+/**
  * GET /dashboard/stats
  * Get historical stats for charts (last 7 days)
  */
